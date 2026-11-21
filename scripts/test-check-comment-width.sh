@@ -2,8 +2,8 @@
 #
 # Self-test of scripts/check-comment-width.sh.
 #
-# Each case writes a fixture git repository with one Rust file, runs the check against it, and
-# asserts the exit code and the line that names the comment or the result.
+# Each case writes a fixture git repository with one Rust file, script, or workflow, runs the
+# check against it, and asserts the exit code and the line that names the comment or the result.
 #
 # Usage:
 #     scripts/test-check-comment-width.sh
@@ -103,6 +103,65 @@ expect_check "a file outside crates/ and fuzz/ is not read" \
 dir="$(repo other "$(line '// ' 101)" crates/x/build.txt)"
 expect_check "a file that is no .rs file is not read" "$dir" 0 "Comment width check passed (0 files)."
 
+wide="$(line '# ' 101)"
+check "the fixture's script comment is 101 characters" test "${#wide}" -eq 101
+dir="$(repo script "#!/usr/bin/env bash
+$wide" scripts/x.sh)"
+expect_check \
+  "a # line of 101 characters in a script fails, naming the file, the line, and its width" \
+  "$dir" 1 "scripts/x.sh:2: 101 characters"
+
+multi="$(line '# a product × a ratio π ' 100 'π')"
+check "the fixture's multi-byte script comment is 100 characters" test "${#multi}" -eq 100
+string="$(line 'echo "' 149 'b')\""
+heredoc="$(line 'a line of a here-document ' 140)"
+dir="$(repo script-fits "$multi
+$string
+cat <<EOF
+$heredoc
+EOF" scripts/x.sh)"
+expect_check \
+  "a script comment of 100 characters, some multi-byte, a long string and here-document pass" \
+  "$dir" 0 "Comment width check passed (1 file)."
+
+dir="$(repo inputs "$(line '# Inputs: scripts/x.sh ' 180)
+$(line '# Outputs: ' 101)" scripts/test-x.sh)"
+REJECT="scripts/test-x.sh:1:" expect_check \
+  "a long '# Inputs:' line passes while another long comment fails" \
+  "$dir" 1 "scripts/test-x.sh:2: 101 characters"
+expect_check "only the other long comment is counted" "$dir" 1 \
+  "Comment width check FAILED (1 comment lines over 100 characters"
+
+dir="$(repo inputs-rust "$(line '// # Inputs: ' 101)")"
+expect_check "a Rust comment that holds '# Inputs:' is held to the width" \
+  "$dir" 1 "crates/x/src/lib.rs:1: 101 characters"
+
+dir="$(repo attribute "$(line '#[doc = "' 130 'c')\"]
+fn f() {}")"
+expect_check "a long attribute in a Rust file is no comment" \
+  "$dir" 0 "Comment width check passed (1 file)."
+
+dir="$(repo slashes "$(line 'echo // ' 110)" scripts/x.sh)"
+expect_check "a '//' line in a script is no comment" "$dir" 0 "Comment width check passed (1 file)."
+
+dir="$(repo lib "$(line '    # ' 102)" scripts/lib/x.sh)"
+expect_check "a script under scripts/lib/ is read, its indentation counted" \
+  "$dir" 1 "scripts/lib/x.sh:1: 102 characters"
+
+dir="$(repo hook "$(line '# ' 101)" .githooks/pre-commit)"
+expect_check "a git hook is read" "$dir" 1 ".githooks/pre-commit:1: 101 characters"
+
+dir="$(repo skill "$(line '# ' 101)" .agents/skills/x/claim.sh)"
+expect_check "a skill's script is read" "$dir" 1 ".agents/skills/x/claim.sh:1: 101 characters"
+
+dir="$(repo workflow "jobs:
+$(line '      # ' 101)" .github/workflows/checks.yml)"
+expect_check "a workflow is read" "$dir" 1 ".github/workflows/checks.yml:2: 101 characters"
+
+dir="$(repo skill-doc "$(line '# ' 101)" .agents/skills/x/SKILL.md)"
+expect_check "a file that is no script or workflow is not read" \
+  "$dir" 0 "Comment width check passed (0 files)."
+
 dir="$(repo ignored "fn f() {}")"
 mkdir -p "$dir/crates/x/target/debug"
 printf '%s\n' "$(line '// ' 101)" > "$dir/crates/x/target/debug/out.rs"
@@ -111,7 +170,7 @@ expect_check "a file git ignores is not read" "$dir" 0 "Comment width check pass
 
 dir="$work/nogit"
 mkdir -p "$dir/crates"
-expect_check "a root that is no git repository fails" "$dir" 1 "cannot list the Rust files"
+expect_check "a root that is no git repository fails" "$dir" 1 "cannot list the files"
 
 expect_check "a root that is no directory is refused" "$work/absent" 2 "is not a directory"
 

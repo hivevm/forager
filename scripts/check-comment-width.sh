@@ -1,19 +1,26 @@
 #!/usr/bin/env bash
 #
-# Check: a comment line of a Rust file is at most 100 characters wide.
+# Check: a comment line of a Rust file, a shell script, or a workflow is at most 100 characters
+# wide.
 #
 # rustfmt wraps code at 100 columns but not comments: its wrap_comments and comment_width are
-# unstable, and the pinned toolchain is stable (OPS-pinned-stable-rust-toolchain). This check fails on each line of a .rs
-# file under crates/ or fuzz/ that git does not ignore where:
+# unstable, and the pinned toolchain is stable (OPS-pinned-stable-rust-toolchain). No formatter
+# wraps the comments of the scripts and the workflows either. This check fails on each line that
+# git does not ignore, of a file it reads, where:
 #
-#   - the line is a comment: its first characters after the indentation are '//', which takes in
-#     '///' and '//!';
+#   - the line is a comment: its first characters after the indentation are '//' in a .rs file
+#     under crates/ or fuzz/, which takes in '///' and '//!', and '#' in a script
+#     scripts/**/*.sh, .agents/skills/*/*.sh, or .githooks/*, or a workflow
+#     .github/workflows/*.yml;
 #   - the line, its indentation included, is longer than 100 characters.
+#
+# A script's '# Inputs:' line passes at any width: scripts/check-all.sh reads only the first line
+# that starts with it, so its paths cannot be wrapped onto a second line.
 #
 # Characters are counted, not bytes, as a comment may hold '×' or 'π'. A line that starts with
 # code is not read, so a string literal, a raw string of a fixture, and a comment after code on its
-# line are beyond this check's reach; so is a block comment. A line of a raw string that starts
-# with '//' would be taken for a comment.
+# line are beyond this check's reach; so is a block comment. A line of a raw string or of a
+# here-document that starts with the comment's characters would be taken for a comment.
 #
 # Pure bash + git. Usage:
 #     scripts/check-comment-width.sh [--root <dir>]
@@ -38,12 +45,14 @@ rest_args "${BASH_SOURCE[0]}" "$usage" 0 "${ARGS[@]}"
 WIDTH=100
 export LC_ALL=C.UTF-8
 
-# The Rust files, collected first, so that a failing git fails the check instead of listing none.
-# Separated by NUL, so that git writes a name of non-ASCII characters as it is, not quoted.
+# The files, collected first, so that a failing git fails the check instead of listing none.
+# Separated by NUL, so that git writes a name of non-ASCII characters as it is, not quoted. A
+# pathspec's '*' matches across '/', so 'scripts/*.sh' takes in scripts/lib/.
 mapfile -t -d '' files < <(git -C "$ROOT" ls-files -z --cached --others --exclude-standard -- \
-  'crates/*.rs' 'fuzz/*.rs' 2>/dev/null)
+  'crates/*.rs' 'fuzz/*.rs' 'scripts/*.sh' '.agents/skills/*/*.sh' '.githooks/*' \
+  '.github/workflows/*.yml' 2>/dev/null)
 if ! wait "$!"; then
-  echo "ERROR: cannot list the Rust files under $ROOT with git" >&2
+  echo "ERROR: cannot list the files under $ROOT with git" >&2
   echo "Comment width check FAILED." >&2
   exit 1
 fi
@@ -53,10 +62,13 @@ count=0
 for file in "${files[@]}"; do
   [[ -f "$ROOT/$file" ]] || continue
   count=$((count + 1))
+  comment='^[[:space:]]*#' inputs='^# Inputs:'
+  [[ "$file" == *.rs ]] && comment='^[[:space:]]*//' inputs='^$'
   n=0
   while IFS= read -r line || [[ -n "$line" ]]; do
     n=$((n + 1))
-    [[ "$line" =~ ^[[:space:]]*// ]] || continue
+    [[ "$line" =~ $comment ]] || continue
+    [[ "$line" =~ $inputs ]] && continue
     ((${#line} > WIDTH)) || continue
     echo "ERROR: $file:$n: ${#line} characters — wrap the comment at $WIDTH" >&2
     failures=$((failures + 1))

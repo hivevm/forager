@@ -225,9 +225,9 @@ jobs:
         run: bash scripts/check-guards.sh
       - name: Self-test the comment width check
         run: bash scripts/test-check-comment-width.sh
-      # rustfmt wraps no comment on the stable toolchain; a Rust comment line fits in 100
-      # characters.
-      - name: Check that every comment line of a Rust file fits in 100 characters
+      # rustfmt wraps no comment on the stable toolchain, and no formatter wraps a script's or a
+      # workflow's; a comment line of a Rust file, a script, or a workflow fits in 100 characters.
+      - name: Check that every comment line of a Rust file, a script, or a workflow fits in 100 characters
         run: bash scripts/check-comment-width.sh
       - name: Self-test the fuzz variants check
         run: bash scripts/test-check-fuzz-variants.sh
