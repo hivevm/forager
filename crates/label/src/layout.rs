@@ -267,10 +267,13 @@ impl Layout {
         let glyphs = glyphs.into();
         let number = self.lengths.len();
         // (1 - numlines + line_number) * line_height, in C's int before the double. Where that
-        // overflows, which C leaves undefined, the pen saturates: such a line stands past any
-        // image, and its glyphs are left out as they are drawn.
+        // overflows, which C leaves undefined, the pen holds the product's exact value: such a
+        // line stands past any image, and its glyphs are left out as they are drawn. The product
+        // stays in an i64: the line height is an int, at most 2^31 either way, and each line
+        // takes a character of the label's text, which Q-9's bounds on a data file and on a
+        // text keep within 256 MiB, so the rows stay under 2^28 and the product under 2^59.
         let rows = 1 - self.num_lines as i64 + number as i64;
-        let pen_y = rows.saturating_mul(self.line_height) as f64;
+        let pen_y = (rows * self.line_height) as f64;
         let mut pen_x = 0.0;
         for &id in &glyphs {
             let glyph = cache.get(font, id).ok_or(id)?;
