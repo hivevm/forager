@@ -3,13 +3,13 @@
 # Self-test of the ADR index's merge driver, .githooks/merge-adr-index, as .gitattributes names it
 # for docs/adr/README.md (taken from NUC v0.7.0).
 #
-#   - On a small index: the rows both sides appended stand after the merge; a rule one side changed
-#     is taken; a rule both sides changed, or a line changed right below a row the other side
-#     appended, stops the merge with conflict markers; without the driver, the rows conflict.
-#   - On a copy of the repository's files: two branches from the same main that each add an ADR
-#     and its row merge without a conflict on the index, and scripts/check-docs.sh holds the
-#     result. That a row both sides changed comes out twice and fails check-docs.sh is decided by
-#     scripts/test-check-docs.sh.
+#   On a copy of the repository's files: two branches from the same main that each add an ADR and
+#   its row merge without a conflict on the index, and scripts/check-docs.sh holds the result.
+#
+#   The cases on a small index, the rows both sides appended, a rule one or both sides changed, a
+#   line changed right below a row, and the merge without the driver, are the template's, in
+#   scripts/test-git-hooks.sh. That a row both sides changed comes out twice and fails
+#   check-docs.sh is decided by scripts/test-check-docs.sh.
 #
 # Usage:
 #     scripts/test-merge-adr-index.sh
@@ -27,83 +27,8 @@ trap 'rm -rf "$work"' EXIT
 
 failed=0
 passed=0
-check() {
-  local name="$1"; shift
-  if "$@"; then
-    passed=$((passed + 1))
-  else
-    failed=$((failed + 1))
-    echo "FAIL: $name" >&2
-  fi
-}
 
 g() { local d="$1"; shift; git -C "$d" -c user.name=t -c user.email=t@example.invalid "$@"; }
-
-# edit_index <file> <rule> <row> <after> — sets the rule, appends the row at the end of the table,
-# and sets the line right below the table.
-edit_index() {
-  awk -v rule="$2" -v row="$3" -v after="$4" '
-    /^Rule:/ { print "Rule: " rule "."; next }
-    /^After:/ { print row; print "After: " after "."; next }
-    { print }
-  ' "$1" > "$1.tmp" && mv "$1.tmp" "$1"
-}
-
-# indexed <name> <rule on one> <rule on two> <line below the table on two> [none] — a repository
-# whose index holds a rule, a row, and a line right below the table, with the repository's
-# .gitattributes; branches 'one' and 'two' each append a row and set the rule as told, and 'two'
-# the line below. The driver is configured unless the fifth argument is 'none'. Prints its path,
-# checked out at 'two'.
-indexed() {
-  local d="$work/$1" index
-  index="$d/docs/adr/README.md"
-  mkdir -p "$d/docs/adr"
-  git init -q -b main "$d"
-  [[ "${5:-}" == none ]] || git -C "$d" config merge.adr-index.driver "$DRIVER"
-  cp "$ROOT/.gitattributes" "$d/.gitattributes"
-  printf 'Rule: one.\n\n| ADR |\n|-----|\n| [0001](0001-a.md) |\nAfter: one.\n' > "$index"
-  g "$d" add -A && g "$d" commit -q -m index
-  g "$d" switch -q -c one
-  edit_index "$index" "$2" "| [0002](0002-b.md) |" one
-  g "$d" commit -q -am one
-  g "$d" switch -q -c two main
-  edit_index "$index" "$3" "| [0003](0003-c.md) |" "$4"
-  g "$d" commit -q -am two
-  echo "$d"
-}
-
-# rows <dir> — the rule, the rows, and the line below the table, on one line.
-rows() {
-  grep -E '^(\| \[|Rule:|After:)' "$1/docs/adr/README.md" | tr '\n' ' '
-}
-
-# Both are called through check (SC2317 before ShellCheck 0.11, SC2329 from it).
-# shellcheck disable=SC2317,SC2329
-merges() { g "$1" merge -q -m m one > /dev/null 2>&1; }
-# shellcheck disable=SC2317,SC2329
-conflicts() { ! merges "$1" && grep -q '^<<<<<<< ' "$1/docs/adr/README.md"; }
-
-# --- The driver on a small index. ---
-d="$(indexed rows one one one)"
-check "the driver keeps the rows both sides appended" merges "$d"
-check "both rows stand in the index after the merge" \
-  test "$(rows "$d")" = "Rule: one. | [0001](0001-a.md) | | [0003](0003-c.md) | | [0002](0002-b.md) | After: one. "
-
-d="$(indexed prose-one two one one)"
-check "the driver takes a rule one side changed" merges "$d"
-check "the rule one side changed stands once" \
-  test "$(rows "$d")" = "Rule: two. | [0001](0001-a.md) | | [0003](0003-c.md) | | [0002](0002-b.md) | After: one. "
-
-d="$(indexed prose-both two three one)"
-check "the driver stops on a rule both sides changed, with markers" conflicts "$d"
-
-d="$(indexed prose-adjacent one one two)"
-check "the driver stops on a line changed right below a row the other side appended" conflicts "$d"
-
-d="$(indexed no-driver one one one none)"
-check "without the driver the rows conflict" conflicts "$d"
-
-# --- The ticket's case on the repository's own files: two ADRs added in parallel. ---
 
 repo="$work/tree"
 mkdir -p "$repo"

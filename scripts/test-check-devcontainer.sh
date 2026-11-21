@@ -11,9 +11,7 @@
 # no Dev Container or no VS Code settings, and the cases that break one clause of
 # NUC-container-hides-host-daemon each, a socket mount also in a config longer than a pipe holds.
 # The table is read twice, the second time against a copy of the check that rewords its messages,
-# and the reader of the table is checked on fields of its own. Forager's own rows, after the
-# table's, pass the GitHub CLI login from the container's own host directory and fail it from the
-# host's own configuration or another path (SEC-gh-login-stays-on-host).
+# and the reader of the table is checked on fields of its own.
 #
 # Inputs: scripts/check-devcontainer.sh scripts/lib/ scripts/fixtures/check-devcontainer.txt
 #
@@ -96,7 +94,6 @@ repo() {
 
 # --- cases read from the fixture table ----------------------------------------------------
 
-# Verifies: SEC-gh-login-stays-on-host — Forager's own rows of the table.
 TABLE="$ROOT/scripts/fixtures/check-devcontainer.txt"
 
 # table_cases <prefix> — run each case of the table against $CHECK. The Feature, the extra lines,

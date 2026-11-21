@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
-# Runs the fuzz targets under fuzz/ (Q-3; OPS-pinned-stable-rust-toolchain, REN-agg-rust-rasterizer), each for a number of seconds, on
-# the nightly toolchain cargo-fuzz needs. Both are pinned here. The targets are the [[bin]] entries
-# of fuzz/Cargo.toml, read from there, so that no target the manifest builds is skipped; a target
-# without seeds under fuzz/seeds/<target> fails the run before anything is fuzzed;
-# scripts/test-fuzz.sh tests how the targets are read, refused, and run. A crash, a panic, a hang
-# longer than 10 s, or more than 2 GiB of memory fails the target, and the input lands in
-# fuzz/artifacts/<target>/. A target that fails does not stop the others: every target runs for
-# its time, and the run fails at the end, naming each target that failed.
+# Runs the fuzz targets under fuzz/ (Q-3; OPS-pinned-stable-rust-toolchain,
+# REN-agg-rust-rasterizer), each for a number of seconds, on the nightly toolchain cargo-fuzz needs.
+# Both are pinned here. The targets are the [[bin]] entries of fuzz/Cargo.toml, read from there, so
+# that no target the manifest builds is skipped; a target without seeds under fuzz/seeds/<target>
+# fails the run before anything is fuzzed; scripts/test-fuzz.sh tests how the targets are read,
+# refused, and run. A crash, a panic, a hang longer than 10 s, or more than 2 GiB of memory fails
+# the target, and the input lands in fuzz/artifacts/<target>/. A target that fails does not stop the
+# others: every target runs for its time, and the run fails at the end, naming each target that
+# failed.
 # Before fuzzing, cargo deny checks the advisories and sources of the fuzz workspace, which the
 # main check does not see; its licences are not checked, since the harness is never distributed.
 # The weekly workflow fuzz.yml runs it, after install-tools.sh.

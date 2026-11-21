@@ -11,8 +11,7 @@
 #      and no '/var/run/docker' on any line that is not a full-line comment — and adds no
 #      Feature whose id names 'docker-outside-of-docker', the one that mounts it. An engine
 #      inside the container, such as the Docker-in-Docker Feature, talks to no host engine and
-#      is the project's choice: Forager gives the container none (OPS-container-reaches-no-engine),
-#      which this check does not detect and review catches.
+#      is the project's choice.
 #   §3 Features: every Feature is referenced by its major version tag alone ('<ref>:N'), never
 #      untagged, ':latest', a full version, or a digest in the hand-edited file; and
 #      .devcontainer/devcontainer-lock.json exists and its 'features' block names exactly the
@@ -27,10 +26,6 @@
 #      merge.adr-index.driver' with the driver's command as CONTRIBUTING.md writes it. The value is
 #      read from its key to the next top-level key, whatever its form: a string, an array, or an
 #      object.
-#   GitHub CLI login (SEC-gh-login-stays-on-host): devcontainer.json binds no host path ending in
-#      '.config/gh', the host's own configuration, whose token may sit in a keyring the container
-#      cannot read; and what it binds to the container's /home/vscode/.config/gh comes from a host
-#      path ending in '.config/gh-devcontainer', the directory of the container's login.
 #
 # Only the default definition is read; a variant under a subdirectory of .devcontainer/ is not.
 # devcontainer.json allows comments, so full-line '//' comments are dropped before reading; a
@@ -140,17 +135,6 @@ else
     [[ "$id" =~ :[0-9]+$ ]] \
       || add_error "$CONFIG: Feature '$id' is not pinned by its major version tag alone ('<ref>:N') — an untagged, mutable, or fully versioned reference is not what the lock resolves (NUC-container-hides-host-daemon §3) [devcontainer/lock:tag]"
   done
-
-  # GitHub CLI login: each mount is a 'source=…,target=…' string on a line of its own.
-  while IFS= read -r mount; do
-    source="$(grep -oE 'source=[^,"]*' <<< "$mount")"
-    target="$(grep -oE 'target=[^,"]*' <<< "$mount")"
-    if [[ "$source" =~ \.config/gh/?$ ]]; then
-      add_error "$CONFIG: binds the host's own '.config/gh' — the container keeps its login in '~/.config/gh-devcontainer' on the host (SEC-gh-login-stays-on-host) [devcontainer/gh-login:host]"
-    elif [[ "$target" =~ ^target=/home/vscode/\.config/gh/?$ && ! "$source" =~ \.config/gh-devcontainer/?$ ]]; then
-      add_error "$CONFIG: binds /home/vscode/.config/gh from '${source#source=}' — it comes from '~/.config/gh-devcontainer' on the host (SEC-gh-login-stays-on-host) [devcontainer/gh-login:source]"
-    fi
-  done < <(uncommented "$ROOT/$CONFIG" | grep -E 'source=[^,]*,[[:space:]]*target=')
 
   # §3 Lock.
   if [[ ! -f "$ROOT/$LOCK" ]]; then

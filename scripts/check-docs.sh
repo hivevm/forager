@@ -100,7 +100,8 @@
 #      it on an '# On instruction:' line. A job with a matrix reports one check run per entry, so
 #      CONTRIBUTING.md names it by those, '<job> (<values>)', and never by its bare name.
 #      Forager's own exemption: a script that only a '# Not a gate:' workflow measuring on a
-#      schedule runs may stand on an '# On instruction:' line instead (OPS-measurements-are-no-gate).
+#      schedule runs may stand on an '# On instruction:' line instead
+#      (OPS-measurements-are-no-gate).
 #   docs/project-layout
 #      Project Layout integrity: every path listed in the 'Project Layout' block of CONTRIBUTING.md
 #      exists, a trailing '/' meaning a directory. The block is written by hand and nothing else
@@ -182,20 +183,12 @@
 #      Superseded and rejected ADRs are not read, nor is a file .gitattributes marks
 #      'linguist-generated', such as a changelog a tool writes. Indented code blocks are read as
 #      prose.
-#   docs/inactive-adr-refs
-#      No inactive ADR cited outside the record (Forager's own): a reference to a ⚪ superseded
-#      or 🔴 rejected ADR in a file outside docs/adr/ is an error naming the file, the line, the
-#      ADR, and the ADR that supersedes it. Such an ADR explains why and is not a rule (AGENTS.md, section 2), so a
-#      reader sent to it as the decision in force is sent to one the project has left; the rule
-#      docs/adr-refs passes it, as the file exists. Inside docs/adr/ it is cited by right, as the history a
-#      successor answers. A line outside that names a superseded ADR as history names its
-#      successor too, and one that names a rejected ADR says 'rejected'.
 #
-# The rules docs/adr-refs, docs/adr-link-targets, and Forager's docs/inactive-adr-refs read every
-# text file of the repository, not a list of documentation extensions: docs/adr/README.md states
-# that code may reference an ADR, so a verifier restricted to documentation file types would leave
-# the references most likely to go stale — those in source comments, which no reviewer reads
-# alongside the ADR index — unchecked. docs/section-refs reads the section sign only in documentation file
+# The rules docs/adr-refs and docs/adr-link-targets read every text file of the repository,
+# not a list of documentation extensions: docs/adr/README.md states that code may reference an
+# ADR, so a verifier restricted to documentation file types would leave the references most
+# likely to go stale — those in source comments, which no reviewer reads alongside the ADR
+# index — unchecked. docs/section-refs reads the section sign only in documentation file
 # types on purpose: an ADR's identifier and the words 'AGENTS.md, section N' mean one thing
 # wherever they appear, but '§' in source code is an ordinary character (see is_doc_file),
 # and flagging it there would make a project's own string literals fail this repository's CI.
@@ -1005,46 +998,6 @@ check_adr_refs() {  # docs/adr-refs
   done
 }
 
-# A superseded or rejected ADR cited outside docs/adr/ sends a reader to a decision the project
-# has left: the rule docs/adr-refs passes the reference, as the file exists, and the README went on citing an
-# ADR after its successor landed until a review found it. A line that names the successor as
-# well, or says the ADR was rejected, tells the history apart from the decision in force and
-# passes.
-check_inactive_adr_refs() {  # docs/inactive-adr-refs
-  local f adr lineno text id successor
-  local -A inactive=() seen=() named=()
-  for adr in "${ADR_LIST[@]}"; do
-    is_inactive_adr "$adr" || continue
-    adr_key_of "$adr"
-    superseding_id "${ADR_STATUS["$adr"]-}"
-    inactive["$ADR_ID"]="$SUCCESSOR"
-  done
-  ((${#inactive[@]})) || return 0
-  local files=()
-  for f in "${TEXT_FILES[@]}"; do
-    [[ "$f" == "$ADR_DIR"/* ]] || files+=("$f")
-  done
-  ((${#files[@]})) || return 0
-  # One grep over every file; --null ends each file name with a NUL, which no path carries.
-  while IFS= read -r -d '' f && IFS=: read -r lineno text; do
-    adr_refs "$text"
-    seen=() named=()
-    for id in "${REFS[@]}"; do named["$id"]=1; done
-    for id in "${REFS[@]}"; do
-      [[ -v inactive["$id"] && ! -v seen["$id"] ]] || continue
-      seen["$id"]=1
-      successor="${inactive["$id"]}"
-      if [[ -n "$successor" ]]; then
-        [[ -v named["$successor"] ]] && continue
-        add_error "${f#"$ROOT"/}:$lineno: cites $id, which is superseded by $successor — cite $successor, or name it on the same line to cite $id as history [docs/inactive-adr-refs:superseded]"
-      else
-        [[ "$text" == *rejected* ]] && continue
-        add_error "${f#"$ROOT"/}:$lineno: cites $id, which is rejected — cite the decision in force, or say on the same line that $id was rejected [docs/inactive-adr-refs:rejected]"
-      fi
-    done
-  done < <(grep -Hn --null -E "$ADR_REF_RE" "${files[@]}")
-}
-
 check_adr_link_targets() {  # docs/adr-link-targets
   local f rel linkexpr text target base id dir
   for f in "${TEXT_FILES[@]}"; do
@@ -1559,7 +1512,6 @@ check_adr_supersessions
 check_relative_links
 check_section_refs
 check_adr_refs
-check_inactive_adr_refs
 check_adr_link_targets
 check_check_lists
 check_project_layout

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 #
-# Self-test of scripts/sensor-diagnostics-untested.sh. Verifies: OPS-pinned-stable-rust-toolchain, NUC-checks-are-bash
+# Self-test of scripts/sensor-diagnostics-untested.sh.
+# Verifies: OPS-pinned-stable-rust-toolchain, NUC-checks-are-bash
 #
 # Each case writes a throwaway tree of crates under a temporary directory, a crate's source that
 # pushes a diagnostic and the tests beside it, runs the sensor on it, and asserts the exit code and

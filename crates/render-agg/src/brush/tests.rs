@@ -310,7 +310,9 @@ fn a_brushed_line_s_points_that_are_no_finite_number_are_left_out() {
 
 /// Whether a [`JoinProbe`] for `tile`'s pattern, changed by `adjust`, admits `path`, fed whole.
 fn admits(path: &[Point], tile: &Tile, adjust: impl FnOnce(&mut JoinProbe)) -> bool {
-    let pattern = LineImagePattern::<BilinearRgba8>::with_source(&Source(tile.image(built_tile)));
+    let pattern = LineImagePattern::<BilinearRgba8>::with_source(&Source(
+        AggRenderer::new().tile_image(tile),
+    ));
     let mut rasterizer = RasterizerOutlineAa::new();
     let (x, y) = (line_coord_sat(path[0].x), line_coord_sat(path[0].y));
     rasterizer.move_to(x, y);

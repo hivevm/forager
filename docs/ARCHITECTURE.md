@@ -216,7 +216,8 @@ golden path and the test pattern an agent copies from are named here.
   of its class styles passed, are one value, `Refusals`, which a canvas yields in one call, the
   labels keep per layer and merge, and the layer's reports turn into its diagnostics, the labels'
   refusals among them, in one module, `layer_reports.rs`, which writes the reports of a layer's
-  styles and transform trees too. It loads the images of a layer's pixmap marks and fills, and of
+  styles and transform trees too, and those of what the renderer refused, a cached label's on its
+  own layer. It loads the images of a layer's pixmap marks and fills, and of
   its labels' `labelpoint` and `labelcenter` pixmaps, into the render's store before it draws the
   layer, since `symbolize` does no I/O, and hands them to it on the canvas, and to the labels, which
   size the marker a class's first style holds beneath each label, and a `labelpoint` style's marker,
@@ -326,7 +327,8 @@ golden path and the test pattern an agent copies from are named here.
   bound, the bytes a brush's copy of it takes, the drawing that makes it, and its image once the
   renderer has built it (`tile.rs`), the renderer trait, whose `take_refused` hands the engine what
   a renderer refused: brushed pieces by the kind of their tile's symbol, the paths the clip cut, and
-  the glyphs past their reach (`Refused`,
+  the glyphs past their reach, those of a tile's own drawing among them, counted by the renderer
+  that builds the tile (`Refused`,
   [ARCH-third-party-failures-guarded](adr/ARCH-third-party-failures-guarded.md)), the RGBA image,
   and the premultiplied image a pixmap is decoded to (`PremultipliedImage`,
   REN-pixmaps-held-once-per-render); the cost model that bounds a hatch before it is cut
@@ -467,9 +469,10 @@ map it builds and from the display items a recorder in front of agg-rust sees;
 every kind of symbol, and every transform of a class's and a label's style, but those its allow-list
 names with a reason. Beside it, `scripts/check-guards.sh` holds each guard against a third-party
 crate, marked `// Guard: <crate> <version>` in `render`, `render-agg`, and `symbolize`, to a version
-that `Cargo.lock` holds (ARCH-third-party-failures-guarded), `scripts/check-comment-width.sh` holds
-each comment line of a Rust file under `crates/` and `fuzz/` to 100 characters, which rustfmt on the
-stable toolchain does not wrap, and `scripts/mutants.sh` runs cargo-mutants every week through
+that `Cargo.lock` holds (ARCH-third-party-failures-guarded), and `scripts/check-comment-width.sh`
+holds each comment line of a Rust file under `crates/` and `fuzz/`, which rustfmt on the stable
+toolchain does not wrap, and of a script or a workflow to 100 characters, but a line that starts
+`# Inputs:`. `scripts/mutants.sh` runs cargo-mutants every week through
 `.github/workflows/mutants.yml` over the Rust code the week changed on main, in 16 shards, and
 reports the edits no test notices. `scripts/package.sh` packs the CLI's archive and the browser
 bindings' package under `target/package/`, each with `THIRD-PARTY-NOTICES.md` and the two licences,

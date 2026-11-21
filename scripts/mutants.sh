@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# The mutation testing of OPS-pinned-stable-rust-toolchain: cargo-mutants changes the code one small edit at a time and
-# reports each edit no test notices — a test that runs without deciding. A sensor: it reports
-# what survived and fails only when the run itself breaks, not on what it counts. With a base,
-# only the Rust code changed since it is mutated: the lines changed from the merge base to the
-# working tree. The review runs it with the branch the change leaves from, so that a branch no
-# test decides is reported before the merge, not a week after it. With --since a time, the base
+# The mutation testing of OPS-pinned-stable-rust-toolchain: cargo-mutants changes the code one small
+# edit at a time and reports each edit no test notices — a test that runs without deciding. A
+# sensor: it reports what survived and fails only when the run itself breaks, not on what it counts.
+# With a base, only the Rust code changed since it is mutated: the lines changed from the merge base
+# to the working tree. The review runs it with the branch the change leaves from, so that a branch
+# no test decides is reported before the merge, not a week after it. With --since a time, the base
 # is the last commit before it on HEAD's first-parent line: main as it stood then, never a commit
 # of a branch merged later, whose code would otherwise fall before every week's base. The weekly
 # workflow mutants.yml runs it with a time a week before, so that each week's code is mutated
@@ -24,7 +24,8 @@
 # baseline run, some 1,000 seconds on a runner, and a mutant that turns a parser's step into a
 # loop spent all of it. 300 seconds stay above the 205 the whole workspace's tests take there.
 #
-# Usage: bash scripts/mutants.sh [--root <dir>] [--base <revision> | --since <time>] [shard, e.g. 1/4]
+# Usage: bash scripts/mutants.sh [--root <dir>] [--base <revision> | --since <time>]
+#          [shard, e.g. 1/4]
 #   e.g. bash scripts/mutants.sh --base origin/main
 #        bash scripts/mutants.sh --since 2026-11-13T04:17:00Z 3/16
 # The root, this repository unless --root names another, is the workspace mutated. An argument it

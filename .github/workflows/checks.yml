@@ -2,27 +2,27 @@ name: Checks
 
 # Enforces the repository's rules as CI. Pure bash + coreutils — nothing is installed but
 # ShellCheck, which the shell job installs at the version scripts/install-shellcheck.sh pins
-# (OPS-pinned-stable-rust-toolchain), jscpd, which the jobs that run its self-test install at the version
-# scripts/install-jscpd.sh pins for the duplication sensor (OPS-pinned-stable-rust-toolchain), and the toolchain of the
-# rust job. scripts/check-all.sh is the local equivalent;
-# the rule docs/check-lists of scripts/check-docs.sh holds its list, the jobs of this workflow, and the required
-# checks named in CONTRIBUTING.md together. Each job runs a check after its own self-test, and
-# each script's header says what it checks and which ADR it holds.
+# (OPS-pinned-stable-rust-toolchain), jscpd, which the jobs that run its self-test install at the
+# version scripts/install-jscpd.sh pins for the duplication sensor
+# (OPS-pinned-stable-rust-toolchain), and the toolchain of the rust job. scripts/check-all.sh is the
+# local equivalent; the rule docs/check-lists of scripts/check-docs.sh holds its list, the jobs of
+# this workflow, and the required checks named in CONTRIBUTING.md together. Each job runs a check
+# after its own self-test, and each script's header says what it checks and which ADR it holds.
 #
 # The sensors report for the reviewer and fail on nothing they count, except the plain rules,
 # which this workflow runs with --require, and the action references, which this project runs with
-# --require major-tag as the check of OPS-actions-by-major-tag; their self-tests fail like any check's. The sensors
-# job checks out the full history because five sensors read it. The review binding sensor runs in
-# review-binding.yml, the repository settings sensor on a human's instruction
+# --require major-tag as the check of OPS-actions-by-major-tag; their self-tests fail like any
+# check's. The sensors job checks out the full history because five sensors read it. The review
+# binding sensor runs in review-binding.yml, the repository settings sensor on a human's instruction
 # (NUC-checks-are-bash §7); this workflow runs the self-test of each.
 #
 # The build, test, and lint job runs scripts/check-rust.sh after scripts/install-tools.sh
-# (OPS-pinned-stable-rust-toolchain), the green commits sensor after its self-test, which runs rustfmt and the pinned
-# ShellCheck on each commit since the base, and the self-test of scripts/fuzz.sh, which reads
-# manifests with the toolchain installed; the one job of this workflow that installs a
-# toolchain; ~/.cargo/bin and the registry are cached, keyed on the files that decide their
-# content, and so is the msautotest suite check-rust.sh fetches, keyed on the script that holds
-# its pin.
+# (OPS-pinned-stable-rust-toolchain), the green commits sensor after its self-test, which runs
+# rustfmt and the pinned ShellCheck on each commit since the base, and the self-test of
+# scripts/fuzz.sh, which reads manifests with the toolchain installed; the one job of this workflow
+# that installs a toolchain; ~/.cargo/bin and the registry are cached, keyed on the files that
+# decide their content, and so is the msautotest suite check-rust.sh fetches, keyed on the script
+# that holds its pin.
 #
 # The browser job runs the browser test of G-14 alone, against the Google Chrome and ChromeDriver
 # of the runner image, which CHROMEWEBDRIVER names (TST-browser-test-over-webdriver). It
@@ -82,6 +82,14 @@ jobs:
         run: bash scripts/test-check-docs.sh
       - name: Check documentation consistency
         run: bash scripts/check-docs.sh
+      # Forager's own: the strict reader of its fixture tables, and its rule beside the
+      # template's that no superseded or rejected ADR is cited outside the record.
+      - name: Self-test the strict reader of the fixture tables
+        run: bash scripts/test-rows.sh
+      - name: Self-test the check of inactive ADR references
+        run: bash scripts/test-check-inactive-adr-refs.sh
+      - name: Check that no inactive ADR is cited outside the record
+        run: bash scripts/check-inactive-adr-refs.sh
       # The self-test below runs every self-test, the duplication sensor's among them, which runs
       # jscpd at the version scripts/install-jscpd.sh pins (OPS-pinned-stable-rust-toolchain).
       - name: Install jscpd at its pinned version
@@ -120,6 +128,11 @@ jobs:
         run: bash scripts/test-check-devcontainer.sh
       - name: Check that the Dev Container keeps the host engine out of reach
         run: bash scripts/check-devcontainer.sh
+      # Forager's own rule beside the template's: the mount of the GitHub CLI's login.
+      - name: Self-test the GitHub CLI login check
+        run: bash scripts/test-check-gh-login.sh
+      - name: Check that the GitHub CLI login is bound from a host directory of its own
+        run: bash scripts/check-gh-login.sh
 
   sensors:
     runs-on: ubuntu-latest
@@ -179,7 +192,8 @@ jobs:
         run: bash scripts/sensor-diagnostics-untested.sh
       - name: Self-test the action references sensor
         run: bash scripts/test-sensor-action-refs.sh
-      # The check of OPS-actions-by-major-tag: every action by its major version tag, kept current by Dependabot.
+      # The check of OPS-actions-by-major-tag: every action by its major version tag, kept current
+      # by Dependabot.
       # Verifies: OPS-actions-by-major-tag
       - name: Check that every action is referenced by its major version tag
         run: bash scripts/sensor-action-refs.sh --require major-tag
@@ -205,13 +219,15 @@ jobs:
         run: bash scripts/check-notice.sh
       - name: Self-test the guard check
         run: bash scripts/test-check-guards.sh
-      # Every guard against a third-party crate names a version Cargo.lock holds (ARCH-third-party-failures-guarded).
+      # Every guard against a third-party crate names a version Cargo.lock holds
+      # (ARCH-third-party-failures-guarded).
       - name: Check that every guard's marker names a version Cargo.lock holds
         run: bash scripts/check-guards.sh
       - name: Self-test the comment width check
         run: bash scripts/test-check-comment-width.sh
-      # rustfmt wraps no comment on the stable toolchain; a Rust comment line fits in 100 characters.
-      - name: Check that every comment line of a Rust file fits in 100 characters
+      # rustfmt wraps no comment on the stable toolchain, and no formatter wraps a script's or a
+      # workflow's; a comment line of a Rust file, a script, or a workflow fits in 100 characters.
+      - name: Check that every comment line of a Rust file, a script, or a workflow fits in 100 characters
         run: bash scripts/check-comment-width.sh
       - name: Self-test the fuzz variants check
         run: bash scripts/test-check-fuzz-variants.sh
@@ -291,8 +307,8 @@ jobs:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
-          # The schema check reads the release tags, whose schema files are frozen (IR-schema-per-format-version), and
-          # refuses a shallow checkout, which has none.
+          # The schema check reads the release tags, whose schema files are frozen
+          # (IR-schema-per-format-version), and refuses a shallow checkout, which has none.
           fetch-depth: 0
       # The tools are compiled by cargo install on a cache miss, which takes minutes; the key
       # changes whenever a pinned version can.

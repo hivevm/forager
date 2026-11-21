@@ -9,9 +9,9 @@
 # and asserts the exit code and, for a failing case, the key and the data of the violation. The
 # baseline passes; every other case breaks one thing. The cases stand in the fixture table
 # scripts/fixtures/check-docs-record.txt, which says its format, so that a port of the check is
-# held to them. Those of the rule docs/inactive-adr-refs (no inactive ADR cited outside the record)
-# and the exemption of docs/check-lists for a script only a workflow that is no gate runs, this
-# project's own, stand in the same format in RECORD_OWN below, read through the same reader. Every fixture has its setup done.
+# held to them. Every fixture has its setup done. The cases of the exemption of docs/check-lists
+# for a script only a workflow that is no gate runs, this project's own, stand in the same format in
+# RECORD_OWN below, read with the table through the strict reader of scripts/lib/rows.sh.
 #
 # Four cases stay here, since no row of the table can hold them: a reference in words to a
 # section AGENTS.md lacks, twice, which the rule docs/section-refs would read in the table itself,
@@ -33,6 +33,8 @@ unset $(git rev-parse --local-env-vars)
 
 # shellcheck source-path=SCRIPTDIR source=lib/selftest.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib/selftest.sh"
+# shellcheck source-path=SCRIPTDIR source=lib/rows.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/rows.sh"
 CHECK="$ROOT/scripts/check-docs.sh"
 
 # sed_in <file> <sed script> — edit a fixture file in place, the same way on GNU and BSD sed.
@@ -305,26 +307,20 @@ step() {
 # g <dir> <git args...> — git in a fixture, committing as a fixed author.
 g() { local dir="$1"; shift; fixture "$dir"; git -C "$dir" -c user.name=t -c user.email=t@t -c commit.gpgsign=false "$@"; }
 
-# This project's own cases, in the format of the table: the rule docs/inactive-adr-refs, which the
-# template does not have, one for each side of its line, and the exemption of docs/check-lists for
-# a script only a workflow that is no gate runs, such as the weekly fuzz run, named on an '# On instruction:' line instead of running
-# locally.
+# This project's own cases, in the format of the table: the exemption of docs/check-lists for a
+# script only a workflow that is no gate runs, such as the weekly fuzz run, named on an
+# '# On instruction:' line instead of running locally.
 # Verifies: OPS-measurements-are-no-gate
 RECORD_OWN="$(cat <<'EOF'
-docs/inactive-adr-refs | fail | docs/inactive-adr-refs:superseded @ README.md:6 @ SEC:decision-1 @ SEC:decision-2 | a superseded ADR cited in the README | adr SEC:decision-1 superseded:SEC:decision-2; adr SEC:decision-2 accepted; supersedes SEC:decision-2 SEC:decision-1; text README.md Decided in SEC:decision-1.
-docs/inactive-adr-refs | pass | - | a superseded ADR cited inside another ADR | adr SEC:decision-1 superseded:SEC:decision-2; adr SEC:decision-2 accepted; supersedes SEC:decision-2 SEC:decision-1; text docs/adr/SEC:decision-2.md As SEC:decision-1 decided before.
-docs/inactive-adr-refs | pass | - | a superseded ADR cited as history beside its successor | adr SEC:decision-1 superseded:SEC:decision-2; adr SEC:decision-2 accepted; supersedes SEC:decision-2 SEC:decision-1; text README.md Decided in SEC:decision-2, which superseded SEC:decision-1.
-docs/inactive-adr-refs | fail | docs/inactive-adr-refs:superseded @ README.md:6 @ SEC:decision-1 @ SEC:decision-2 | a superseded ADR beside an identifier its successor's is a prefix of | adr SEC:decision-1 superseded:SEC:decision-2; adr SEC:decision-2 accepted; supersedes SEC:decision-2 SEC:decision-1; adr SEC:decision-2-b proposed; text README.md Decided in SEC:decision-1, see SEC:decision-2-b.
-docs/inactive-adr-refs | fail | docs/inactive-adr-refs:rejected @ scripts/run.sh:1 @ SEC:decision-1 | a rejected ADR cited in a script | adr SEC:decision-1 rejected; text scripts/run.sh # Decided in SEC:decision-1.; text scripts/check-all.sh # On instruction: scripts/run.sh
-docs/inactive-adr-refs | pass | - | a rejected ADR cited as rejected | adr SEC:decision-1 rejected; text scripts/run.sh # Not SEC:decision-1, which was rejected.; text scripts/check-all.sh # On instruction: scripts/run.sh
 docs/check-lists | pass | - | a script only a workflow that is no gate runs, named on an '# On instruction:' line | text scripts/fuzz.sh echo fuzz; text .github/workflows/release.yml on: [push]\njobs:\n  publish:\n    steps:\n      - run: bash scripts/fuzz.sh; text scripts/check-all.sh # Not a gate: .github/workflows/release.yml\n# On instruction: scripts/fuzz.sh
 docs/check-lists | fail | docs/check-lists:unrun @ scripts/check-all.sh @ scripts/fuzz.sh | a script a gate runs, named on an '# On instruction:' line only | text scripts/fuzz.sh echo fuzz; text .github/workflows/checks.yml   fuzz:\n    steps:\n      - run: bash scripts/fuzz.sh; edit CONTRIBUTING.md `docs` => `docs`, `fuzz`; text scripts/check-all.sh # On instruction: scripts/fuzz.sh
 EOF
 )"
+ROW_RE='^(docs/[a-z0-9-]+|all) \| '
 
 n=0
+table_rows "$ROW_RE" < <(cat "$TABLE"; echo "$RECORD_OWN") > "$work/rows"
 while IFS= read -r line; do
-  [[ "$line" =~ ^(docs/[a-z0-9-]+|all)\ \| ]] || continue
   n=$((n + 1))
   line="$(table_hyphens "$line")"
   IFS=$'\x1f' read -r rule want needle name tree <<< "${line// | /$'\x1f'}"
@@ -341,7 +337,7 @@ while IFS= read -r line; do
   git -C "${d:?}" add -A
   out="$(bash "$CHECK" --root "$d" 2>&1)"
   table_case "$rule: $name" "$want" "$needle" "$?" "$out"
-done < <(cat "$TABLE"; echo "$RECORD_OWN")
+done < "$work/rows"
 ((n > 0)) || { echo "FAIL: no case read from $TABLE" >&2; failed=$((failed + 1)); }
 
 # A git that cannot read the history, as one before 2.31 rejects --diff-merges, fails the rule

@@ -1,0 +1,49 @@
+# Cases of scripts/check-gh-login.sh, read by scripts/test-check-gh-login.sh.
+#
+# One case per line, four fields separated by ' | ':
+#
+#   <pass or fail> | <what the output holds, or -> | <name> | <tree>
+#
+# A run exits 0 for pass and 1 for fail. The second field is '<key>', then ' @ <subject>' for each
+# datum the line names, such as a host path. A line of the output ends in '[<key>]', the rule and a
+# reason word, and holds each subject, in that order and with no ASCII letter, digit, hyphen, or
+# underscore beside it; the rest of its wording is free. A field may start with '!': it then holds
+# where no line that ends in '[<key>]' holds the subjects in their order.
+#
+# A line that starts with '#' is a comment, not a case. Any other line that is not blank and not a
+# case fails the self-test, named.
+#
+# The tree is a list of steps separated by '; ', or '-' for none, applied in order to a directory,
+# not under git, that passes the check, of one file, .devcontainer/devcontainer.json:
+#
+#   {
+#     "name": "fixture",
+#     // The login of the GitHub CLI.
+#     "mounts": [ "<mount>" ],
+#     "image": "mcr.microsoft.com/devcontainers/base:debian"
+#   }
+#
+# where <mount> is 'source=${localEnv:HOME}/.config/gh-devcontainer,target=/home/vscode/.config/gh,
+# type=bind', on one line. The steps:
+#
+#   mounts <text>   the line of "mounts" is '  "mounts": <text>,', or no line for '-'
+#   line <text>     a line '  <text>' before the line of "image"
+#   rm <path>       the path removed, a directory with all it holds
+
+pass | devcontainer/gh-login:passed | gh's login kept in a host directory of its own passes | -
+pass | devcontainer/gh-login:passed | a definition with no mounts passes | mounts -
+pass | devcontainer/gh-login:passed | a trailing slash on the container's own host directory passes | mounts [ "source=${localEnv:HOME}/.config/gh-devcontainer/,target=/home/vscode/.config/gh,type=bind" ]
+pass | devcontainer/gh-login:passed | a mount of another directory beside the login passes | mounts [ "source=${localEnv:HOME}/.claude,target=/home/vscode/.claude,type=bind", "source=${localEnv:HOME}/.config/gh-devcontainer,target=/home/vscode/.config/gh,type=bind" ]
+pass | devcontainer/gh-login:passed | a commented line that binds the host's own gh configuration is not read | line // "mounts": [ "source=${localEnv:HOME}/.config/gh,target=/home/vscode/.config/gh,type=bind" ],
+pass | devcontainer/gh-login:unbound | a tree without .devcontainer/ has nothing to bind | rm .devcontainer
+pass | devcontainer/gh-login:unbound | a .devcontainer/ without its definition has nothing to bind | rm .devcontainer/devcontainer.json
+fail | devcontainer/gh-login:host @ .devcontainer/devcontainer.json @ SEC-gh-login-outlives-rebuilds | the host's own gh configuration bound into the container | mounts [ "source=${localEnv:HOME}/.config/gh,target=/home/vscode/.config/gh,type=bind" ]
+fail | devcontainer/gh-login:host @ .devcontainer/devcontainer.json @ SEC-gh-login-outlives-rebuilds | the host's own gh configuration with a trailing slash | mounts [ "source=${localEnv:HOME}/.config/gh/,target=/home/vscode/.config/gh,type=bind" ]
+fail | devcontainer/gh-login:host @ .devcontainer/devcontainer.json @ SEC-gh-login-outlives-rebuilds | the host's own gh configuration bound to another target | mounts [ "source=${localEnv:HOME}/.config/gh,target=/tmp/gh,type=bind" ]
+fail | devcontainer/gh-login:source @ /tmp/gh @ SEC-gh-login-outlives-rebuilds | the container's gh configuration bound from another host path | mounts [ "source=/tmp/gh,target=/home/vscode/.config/gh,type=bind" ]
+fail | devcontainer/gh-login:source @ /tmp/gh @ SEC-gh-login-outlives-rebuilds | another host path with a trailing slash on the target | mounts [ "source=/tmp/gh,target=/home/vscode/.config/gh/,type=bind" ]
+fail | devcontainer/gh-login:source @ /tmp/gh @ SEC-gh-login-outlives-rebuilds | a bad mount after a good one is read too | mounts [ "source=${localEnv:HOME}/.claude,target=/home/vscode/.claude,type=bind", "source=/tmp/gh,target=/home/vscode/.config/gh,type=bind" ]
+fail | devcontainer/gh-login:host @ .devcontainer/devcontainer.json @ SEC-gh-login-outlives-rebuilds | the host's own gh configuration in a mount whose type comes first | mounts [ "type=bind,source=${localEnv:HOME}/.config/gh,target=/home/vscode/.config/gh" ]
+fail | devcontainer/gh-login:host @ .devcontainer/devcontainer.json @ SEC-gh-login-outlives-rebuilds | the host's own gh configuration in a mount whose target comes first | mounts [ "target=/home/vscode/.config/gh,source=${localEnv:HOME}/.config/gh,type=bind" ]
+fail | devcontainer/gh-login:source @ /tmp/gh @ SEC-gh-login-outlives-rebuilds | another host path in a mount whose type comes first | mounts [ "type=bind,source=/tmp/gh,target=/home/vscode/.config/gh" ]
+pass | devcontainer/gh-login:passed | the container's own host directory in a mount whose type comes first passes | mounts [ "type=bind,source=${localEnv:HOME}/.config/gh-devcontainer,target=/home/vscode/.config/gh" ]

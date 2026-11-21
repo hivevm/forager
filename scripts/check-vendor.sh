@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 #
-# Check: the vendored files of the browser example, its JavaScript and font (SEC-third-party-files-vendored).
+# Check: the vendored files of the browser example, its JavaScript and font
+# (SEC-third-party-files-vendored).
 #
 # The example loads third-party code only from copies under examples/web/vendor/, and those copies
 # are the published bytes. This check fails when:

@@ -22,9 +22,9 @@ PNPOLY_ENDORSE='The name of W. Randolph Franklin may not be used to endorse or p
 # the permission sentence and the disclaimer of the MIT licence, which MapServer's share.
 PROJ_TERMS='All source, data files and other contents of the PROJ package are available'
 
-# JTS's notice, which a file under crates/symbolize that follows a JTS source holds (GEO-own-circle-for-buffer): the
-# copyright line of those sources, and the third condition and the disclaimer of the Eclipse
-# Distribution License 1.0, under which Forager takes JTS.
+# JTS's notice, which a file under crates/symbolize that follows a JTS source holds
+# (GEO-own-circle-for-buffer): the copyright line of those sources, and the third condition and the
+# disclaimer of the Eclipse Distribution License 1.0, under which Forager takes JTS.
 JTS_COPYRIGHT='Copyright (c) 2016 Vivid Solutions.'
 JTS_ENDORSE='Neither the name of the Eclipse Foundation, Inc. nor the names of its'
 JTS_DISCLAIMER='THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY'

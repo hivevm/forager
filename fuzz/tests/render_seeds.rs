@@ -147,7 +147,9 @@ enum Path {
     /// A label of two lines or more at a glyph size whose line height, times the rows of its first
     /// line with glyphs above its last, passes C's `int`, held in the label cache of the point
     /// layer drawn alone, with no `label-*` diagnostic: the pen of its first line with glyphs
-    /// stands past C's `int`, where MapServer's arithmetic overflows. The weekly runs of
+    /// stands past C's `int`, where MapServer's arithmetic overflows, which C leaves undefined,
+    /// and the pen holds the product's exact value, which Q-9's 16 MiB bounds on a text keep
+    /// within an `i64`. The weekly runs of
     /// 2026-11-01 and 11-08 panicked on another path, an `i64` product of a line height saturated
     /// from a glyph size past an `i64`, which c39b8450 made saturate. That path is dead since
     /// ef639d7a cut the line height to an `int`, so this path, its nearest reachable neighbour,
