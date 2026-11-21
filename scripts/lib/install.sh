@@ -1,8 +1,9 @@
 # shellcheck shell=bash
-# The install of a pinned release binary (OPS-pinned-stable-rust-toolchain): the download of a release asset, its check
-# against the SHA-256 pinned for it, and the install of the binary it holds into a directory on
-# PATH. Sourced by scripts/install-shellcheck.sh and scripts/install-jscpd.sh, the project's own
-# installers (the template brings neither), which pin the version, the assets, and their digests.
+# The install of a pinned release binary (OPS-pinned-stable-rust-toolchain): the download of a
+# release asset, its check against the SHA-256 pinned for it, and the install of the binary it holds
+# into a directory on PATH. Sourced by scripts/install-shellcheck.sh and scripts/install-jscpd.sh,
+# the project's own installers (the template brings neither), which pin the version, the assets, and
+# their digests.
 #
 # Usage, from scripts/install-<tool>.sh:
 #     # shellcheck source-path=SCRIPTDIR source=lib/install.sh

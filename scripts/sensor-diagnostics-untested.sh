@@ -11,8 +11,8 @@
 # line, as rustfmt writes it. A test of any crate counts, and it names a code when it holds it
 # between two characters that are no part of a kebab-case code. A code passed as a variable or
 # through a helper of its own, such as the mapfile parser's 'error', is not read, nor is a call a
-# test makes. It reports and never fails (NUC-checks-are-bash §4): a code no test names is one whose test the
-# reviewer asks for, through the load or render that pushes it.
+# test makes. It reports and never fails (NUC-checks-are-bash §4): a code no test names is one whose
+# test the reviewer asks for, through the load or render that pushes it.
 #
 # Pure bash + grep + coreutils. Usage:
 #     scripts/sensor-diagnostics-untested.sh [--root <dir>]

@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
 # Builds map2img of the reference release of MapServer, the instrument of the noise measurement
-# of G-6 (TST-noise-measured-against-mapserver): from the commit scripts/fetch-msautotest.sh pins, which this script reads and
-# never names itself, with MapServer's default build options, SVG symbols through librsvg, and
-# curl, as MapServer's own CI builds the references, and the Ubuntu archive's packages below, into
-# target/mapserver/<commit>/. It then compiles the reader of MapServer's label cache,
-# crates/cli/tests/conformance/mapserver_labels.c, against that build's unmodified library and
-# headers, outside the cached build, into target/mapserver-labels/<commit>/ (TST-noise-measured-against-mapserver), and the
-# reader of MapServer's reprojection, crates/cli/tests/conformance/mapserver_proj.c, the same way
-# into target/mapserver-proj/<commit>/ (TST-proj-references-from-mapserver), and prints the
-# path of map2img and, on a second and a third line, those of the two readers. It adds no apt source. It runs on a
-# GitHub-hosted runner only, where .github/workflows/noise.yml calls it, and refuses anywhere else,
-# the dev container included.
+# of G-6 (TST-noise-measured-against-mapserver): from the commit scripts/fetch-msautotest.sh pins,
+# which this script reads and never names itself, with MapServer's default build options, SVG
+# symbols through librsvg, and curl, as MapServer's own CI builds the references, and the Ubuntu
+# archive's packages below, into target/mapserver/<commit>/. It then compiles the reader of
+# MapServer's label cache, crates/cli/tests/conformance/mapserver_labels.c, against that build's
+# unmodified library and headers, outside the cached build, into target/mapserver-labels/<commit>/
+# (TST-noise-measured-against-mapserver), and the reader of MapServer's reprojection,
+# crates/cli/tests/conformance/mapserver_proj.c, the same way into target/mapserver-proj/<commit>/
+# (TST-proj-references-from-mapserver), and prints the path of map2img and, on a second and a third
+# line, those of the two readers. It adds no apt source. It runs on a GitHub-hosted runner only,
+# where .github/workflows/noise.yml calls it, and refuses anywhere else, the dev container included.
 #
 # Into the job summary it writes the CMake options of the build and, for each package whose
 # library map2img links, the version installed and the origin apt-cache policy reports, so that a

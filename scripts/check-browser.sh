@@ -8,8 +8,9 @@
 #
 # Where FORAGER_BROWSER_TEST=required, as in the browser job of .github/workflows/checks.yml, this
 # script builds the bundle first, and a missing ChromeDriver (CHROMEWEBDRIVER, else PATH), Chrome,
-# or bundle fails the test. Elsewhere, as in the Dev Container, which has no browser (OPS-dev-container-adds-rust),
-# the test's cases return at once with a note on stderr, and the bundle is not built.
+# or bundle fails the test. Elsewhere, as in the Dev Container, which has no browser
+# (OPS-dev-container-adds-rust), the test's cases return at once with a note on stderr, and the
+# bundle is not built.
 #
 # Usage: bash scripts/check-browser.sh [--root <dir>]
 # Exit code 0 when the test passes or does not run, 2 on an argument it does not read or a root

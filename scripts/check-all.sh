@@ -3,12 +3,12 @@
 # Runs every consistency check this repository enforces, in one command.
 #
 # AGENTS.md §5 requires these checks to pass before pushing. This script is the local equivalent of
-# .github/workflows/checks.yml; the rule docs/check-lists of check-docs.sh holds the two lists, the required status
-# checks named in CONTRIBUTING.md, and the scripts under scripts/ together. A script that runs on a
-# human's instruction, or only inside another script, is named on an '# On instruction:' line
-# below, and a workflow that is no gate, one that publishes, such as a release, or one that
-# measures on a schedule
-# (OPS-measurements-are-no-gate), on a '# Not a gate:' line.
+# .github/workflows/checks.yml; the rule docs/check-lists of check-docs.sh holds the two lists, the
+# required status checks named in CONTRIBUTING.md, and the scripts under scripts/ together. A script
+# that runs on a human's instruction, or only inside another script, is named on an
+# '# On instruction:' line below, and a workflow that is no gate, one that publishes, such as a
+# release, or one that measures on a schedule (OPS-measurements-are-no-gate), on a '# Not a gate:'
+# line.
 #
 # Every check runs even after an earlier one fails, so a single run reports everything that is
 # wrong instead of the first thing. The exit code is what a pre-push decision is made on.
@@ -180,8 +180,8 @@ run() {
 }
 
 # The weekly workflows measure rather than gate, and a push cannot wait for them: the fuzz run of
-# Q-3, the mutation testing of OPS-pinned-stable-rust-toolchain, and the noise measurement of G-6. Their scripts run on a
-# human's instruction locally, and their self-tests run here.
+# Q-3, the mutation testing of OPS-pinned-stable-rust-toolchain, and the noise measurement of G-6.
+# Their scripts run on a human's instruction locally, and their self-tests run here.
 # Not a gate: .github/workflows/fuzz.yml
 # Not a gate: .github/workflows/mutants.yml
 # Not a gate: .github/workflows/noise.yml

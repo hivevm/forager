@@ -16,8 +16,8 @@
 # A tree without .devcontainer/devcontainer.json has no Dev Container, and nothing binds: the check
 # passes and says so. Full-line '//' comments are dropped before reading. A mount is a string on
 # one line that holds a 'source=' and a 'target=' option, in any order, as the Dev Container writes
-# its mounts; a mount written as an object is not read. The file is small and hand-written, and no JSON parser is guaranteed on
-# PATH.
+# its mounts; a mount written as an object is not read. The file is small and hand-written, and no
+# JSON parser is guaranteed on PATH.
 #
 # Pure bash + grep. Usage:
 #     scripts/check-gh-login.sh [--root <dir>]

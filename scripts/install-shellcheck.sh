@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
-# Installs ShellCheck at the version scripts/check-shell.sh holds the shell lint to (OPS-pinned-stable-rust-toolchain):
-# the release binary of koalaman/shellcheck for this machine's architecture, verified against the
-# SHA-256 GitHub records for the release asset, which is pinned here, into a directory on PATH,
-# ~/.local/bin unless SHELLCHECK_BIN_DIR names another. A ShellCheck already at the version there
-# is kept. scripts/install-tools.sh runs it in the Dev Container (OPS-dev-container-adds-rust), and the shell job of
-# CI runs it before the lint. The download, the check, and the install are scripts/lib/install.sh.
+# Installs ShellCheck at the version scripts/check-shell.sh holds the shell lint to
+# (OPS-pinned-stable-rust-toolchain): the release binary of koalaman/shellcheck for this machine's
+# architecture, verified against the SHA-256 GitHub records for the release asset, which is pinned
+# here, into a directory on PATH, ~/.local/bin unless SHELLCHECK_BIN_DIR names another. A ShellCheck
+# already at the version there is kept. scripts/install-tools.sh runs it in the Dev Container
+# (OPS-dev-container-adds-rust), and the shell job of CI runs it before the lint. The download, the
+# check, and the install are scripts/lib/install.sh.
 #
 # Usage: bash scripts/install-shellcheck.sh [--root <dir>]
 # Exit code 0 when the tool is installed, 2 on an argument it does not read or a root that is no

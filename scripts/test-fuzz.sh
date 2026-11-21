@@ -15,7 +15,8 @@
 # The pins, the nightly toolchain and the version of cargo-fuzz, are read from scripts/fuzz.sh, so
 # that a bump there needs no edit here.
 # Each fixture carries the repository's rust-toolchain.toml, so that cargo reads the manifests
-# with the pinned toolchain (OPS-pinned-stable-rust-toolchain), which scripts/install-tools.sh installs.
+# with the pinned toolchain (OPS-pinned-stable-rust-toolchain), which scripts/install-tools.sh
+# installs.
 #
 # Usage:
 #     scripts/test-fuzz.sh

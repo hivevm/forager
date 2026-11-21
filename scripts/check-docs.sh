@@ -100,7 +100,8 @@
 #      it on an '# On instruction:' line. A job with a matrix reports one check run per entry, so
 #      CONTRIBUTING.md names it by those, '<job> (<values>)', and never by its bare name.
 #      Forager's own exemption: a script that only a '# Not a gate:' workflow measuring on a
-#      schedule runs may stand on an '# On instruction:' line instead (OPS-measurements-are-no-gate).
+#      schedule runs may stand on an '# On instruction:' line instead
+#      (OPS-measurements-are-no-gate).
 #   docs/project-layout
 #      Project Layout integrity: every path listed in the 'Project Layout' block of CONTRIBUTING.md
 #      exists, a trailing '/' meaning a directory. The block is written by hand and nothing else

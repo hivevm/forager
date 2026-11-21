@@ -9,12 +9,12 @@
 # are the repository's entire enforcement layer, so they are held to a lint gate themselves.
 #
 # ShellCheck is the one check dependency beyond bash + coreutils/git, held to the one version
-# scripts/install-shellcheck.sh pins (OPS-pinned-stable-rust-toolchain), which the Dev Container installs on creation
-# through scripts/install-tools.sh and the shell job of CI before the lint, so that a script
-# passes or fails alike in both. Elsewhere, when shellcheck is not on PATH, the check skips itself
-# with a notice instead of failing (CI remains the enforcing gate); in a CI run (CI=true) a
-# missing shellcheck is an error, never a silent skip. A shellcheck of another version names both
-# versions; in a CI run it fails the lint, elsewhere it runs with a warning.
+# scripts/install-shellcheck.sh pins (OPS-pinned-stable-rust-toolchain), which the Dev Container
+# installs on creation through scripts/install-tools.sh and the shell job of CI before the lint, so
+# that a script passes or fails alike in both. Elsewhere, when shellcheck is not on PATH, the check
+# skips itself with a notice instead of failing (CI remains the enforcing gate); in a CI run
+# (CI=true) a missing shellcheck is an error, never a silent skip. A shellcheck of another version
+# names both versions; in a CI run it fails the lint, elsewhere it runs with a warning.
 #
 # Beyond ShellCheck it refuses GNU sed's in-place flag, `sed -i`, which BSD sed on macOS reads as
 # taking a suffix: check-all.sh, and with it the pre-push hook, runs on any host. Comment lines are

@@ -1,17 +1,18 @@
 #!/usr/bin/env bash
-# Builds, tests, and lints the Rust workspace (OPS-pinned-stable-rust-toolchain): formatting, clippy with warnings as
-# errors, the tests, the style document's JSON Schema against its checked-in file (IR-schema-per-format-version),
-# the load of the msautotest suite at the pinned MapServer release (G-1, fetched once into
-# target/ by scripts/fetch-msautotest.sh) and the conformance harness over its cases, whose share
-# of passing cases scripts/check-fidelity.sh holds against the last release (Q-4), and which render
-# alike natively and in the bindings' wasm32 module run in wasmi (G-9, TST-wasm-renders-in-wasmi), the build
-# of every crate that must run in the browser for wasm32-unknown-unknown (Q-1), the WebAssembly
-# bindings and their size (Q-5) once they exist, and cargo deny (SEC-crates-locked-and-denied). scripts/check-all.sh
-# and the `rust` job of checks.yml run it; the tools come from scripts/install-tools.sh. Two
-# fixture workspaces show that cargo deny refuses a non-permissive licence, that clippy bans
-# hash maps, clocks, and randomness on the output path, hosts and tooling free (Q-2), that it
-# refuses a str sliced at an index it cannot see is a character's boundary, and that it refuses
-# f64::min and f64::max in the crates that port MapServer's drawing.
+# Builds, tests, and lints the Rust workspace (OPS-pinned-stable-rust-toolchain): formatting, clippy
+# with warnings as errors, the tests, the style document's JSON Schema against its checked-in file
+# (IR-schema-per-format-version), the load of the msautotest suite at the pinned MapServer release
+# (G-1, fetched once into target/ by scripts/fetch-msautotest.sh) and the conformance harness over
+# its cases, whose share of passing cases scripts/check-fidelity.sh holds against the last release
+# (Q-4), and which render alike natively and in the bindings' wasm32 module run in wasmi (G-9,
+# TST-wasm-renders-in-wasmi), the build of every crate that must run in the browser for
+# wasm32-unknown-unknown (Q-1), the WebAssembly bindings and their size (Q-5) once they exist, and
+# cargo deny (SEC-crates-locked-and-denied). scripts/check-all.sh and the `rust` job of checks.yml
+# run it; the tools come from scripts/install-tools.sh. Two fixture workspaces show that cargo deny
+# refuses a non-permissive licence, that clippy bans hash maps, clocks, and randomness on the output
+# path, hosts and tooling free (Q-2), that it refuses a str sliced at an index it cannot see is a
+# character's boundary, and that it refuses f64::min and f64::max in the crates that port
+# MapServer's drawing.
 #
 # Usage: bash scripts/check-rust.sh [--root <dir>]
 # Exit code 0 when every step passes, 2 on an argument it does not read or a root that is no
@@ -72,8 +73,9 @@ step "msautotest: mapfiles load (G-1), cases hold their outcome and render alike
 suite="$(bash scripts/fetch-msautotest.sh)"
 fidelity="$ROOT/target/fidelity-counts.txt"
 rm -f "$fidelity"
-# The noise measurement needs MapServer, which only .github/workflows/noise.yml builds (TST-noise-measured-against-mapserver);
-# without FORAGER_MAP2IMG and FORAGER_MAPSERVER_LABELS it skips itself.
+# The noise measurement needs MapServer, which only .github/workflows/noise.yml builds
+# (TST-noise-measured-against-mapserver); without FORAGER_MAP2IMG and FORAGER_MAPSERVER_LABELS it
+# skips itself.
 FORAGER_MSAUTOTEST="$suite" FORAGER_FIDELITY="$fidelity" \
   FORAGER_CONFORMANCE_WASM="$ROOT/target/conformance/web/forager_bindings_wasm_bg.wasm" \
   cargo test -p forager-cli --locked --test msautotest -- --ignored

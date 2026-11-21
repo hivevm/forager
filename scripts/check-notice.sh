@@ -27,11 +27,11 @@
 # must stand in the table of scripts/lib/notice.sh, which holds the copyright lines each source
 # holds at PROJ 9.4.0, and the header must hold each of those lines.
 # A Rust file under crates/symbolize that names a JTS source — a Java file, such as
-# DouglasPeuckerLineSimplifier.java — follows JTS (GEO-own-circle-for-buffer) and must hold JTS's notice: the
-# copyright line of its sources, and the third condition and the disclaimer of the Eclipse
-# Distribution License 1.0 (scripts/lib/notice.sh). THIRD-PARTY-NOTICES.md must then hold the same
-# lines, as the licence's second condition asks of a binary. A file that names a JTS source of
-# another copyright line, by the table JTS_SOURCE_COPYRIGHTS of scripts/lib/notice.sh, must hold
+# DouglasPeuckerLineSimplifier.java — follows JTS (GEO-own-circle-for-buffer) and must hold JTS's
+# notice: the copyright line of its sources, and the third condition and the disclaimer of the
+# Eclipse Distribution License 1.0 (scripts/lib/notice.sh). THIRD-PARTY-NOTICES.md must then hold
+# the same lines, as the licence's second condition asks of a binary. A file that names a JTS source
+# of another copyright line, by the table JTS_SOURCE_COPYRIGHTS of scripts/lib/notice.sh, must hold
 # that line too, and so must THIRD-PARTY-NOTICES.md.
 # Beyond this check's reach are a file that names only a MapServer function, one that names a
 # source without `src/`, one that names a C++ source (`src/map….cpp`), whose holders differ by

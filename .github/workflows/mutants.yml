@@ -1,8 +1,8 @@
 name: Mutants
 
-# The mutation testing of OPS-pinned-stable-rust-toolchain, a sensor: the surviving mutants are reported in the job
-# summary and kept as an artifact; the run fails only when it breaks. Once a week,
-# scripts/mutants.sh mutates the Rust code changed on main since main as it stood seven days
+# The mutation testing of OPS-pinned-stable-rust-toolchain, a sensor: the surviving mutants are
+# reported in the job summary and kept as an artifact; the run fails only when it breaks. Once a
+# week, scripts/mutants.sh mutates the Rust code changed on main since main as it stood seven days
 # before the run, so that each week's code is mutated once. A week's code held thousands of
 # mutants in November 2026, so they are split into 16 shards, each a job of its own; the
 # repository is public, and its jobs on GitHub's runners cost nothing. The time is taken once,

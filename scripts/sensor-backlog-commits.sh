@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 #
-# Sensor: commits that add a backlog entry beside other changes (NUC-large-work-is-planned §7 — a session creates a
-# backlog entry in a commit of its own, so a branch that is dropped can hand the entry on).
+# Sensor: commits that add a backlog entry beside other changes (NUC-large-work-is-planned §7 — a
+# session creates a backlog entry in a commit of its own, so a branch that is dropped can hand the
+# entry on).
 #
 # Lists, between a base and a head, each commit that adds a file under 'docs/backlog/' and
 # changes a path outside it, with the entries it adds and the paths beside them. Such a commit

@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# Builds the WebAssembly bundle of the browser bindings into target/web/ (OPS-pinned-stable-rust-toolchain): a build with
-# the size-optimized `wasm` profile for wasm32-unknown-unknown, then the JavaScript glue of the
-# wasm-bindgen CLI, which scripts/install-tools.sh installs at the crate's version. The dev server
-# serves the result under /pkg/; scripts/check-rust.sh measures it.
+# Builds the WebAssembly bundle of the browser bindings into target/web/
+# (OPS-pinned-stable-rust-toolchain): a build with the size-optimized `wasm` profile for
+# wasm32-unknown-unknown, then the JavaScript glue of the wasm-bindgen CLI, which
+# scripts/install-tools.sh installs at the crate's version. The dev server serves the result under
+# /pkg/; scripts/check-rust.sh measures it.
 #
 # Usage: bash scripts/build-web.sh [--root <dir>]
 # Exit code 0 when the bundle is built, 2 on an argument it does not read or a root that is no
