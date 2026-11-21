@@ -1,6 +1,6 @@
 # SEC-gh-login-outlives-rebuilds: The GitHub CLI's login lives in a host directory of the container's own, and a check of Forager's own holds its mount
 
-- **Status:** 🟡 proposed
+- **Status:** 🟢 accepted
 - **Date:** 2026-11-21
 - **Deciders:** Markus Brigl
 - **Applies to:** the `mounts`, `initializeCommand`, and `postCreateCommand` of `.devcontainer/devcontainer.json`, `scripts/check-gh-login.sh`, its self-test `scripts/test-check-gh-login.sh`, and its table `scripts/fixtures/check-gh-login.txt`
