@@ -40,3 +40,29 @@ unattended:
 - A wrong result shows as a failing check or self-test; the revert undoes it.
 - Stop: if a line cannot be wrapped without changing a word, such as a `Verifies:` marker or a
   MapServer notice, hand off with the lines named here.
+
+## Stopped (2026-11-21)
+
+The session stopped at the *Mode*'s stop before building anything: one line cannot be wrapped
+without changing a word.
+
+- `scripts/test-check-shell.sh:21`, its `# Inputs:` line, is 224 characters. `scripts/check-all.sh`
+  reads only the first line that starts with `# Inputs:` (`grep -m1 '^# Inputs:'`, line 94), so a
+  path moved to a second line drops out of `--changed`. The other `# Inputs:` lines fit (the widest
+  of the rest is 100, `scripts/test-sensor-tests-kept.sh`).
+- The ways on are the maintainer's to choose: the check passes a `# Inputs:` line as a marker it
+  does not wrap; `check-all.sh` reads continued `# Inputs:` lines; or the line names a directory
+  for several paths, which changes words.
+
+Where it stands, on the tree at b8e83891, counting characters of the lines whose first characters
+after the indentation are `#`:
+
+- 57 such lines over 100 in 30 files: 13 in the workflows (`checks.yml` 9, `noise.yml` 2,
+  `fuzz.yml` 1, `mutants.yml` 1), 44 in `scripts/` (`check-docs.sh` 5, `check-rust.sh` 5, three
+  `Verifies:` lines, the `# Inputs:` line above, and `test-check-docs.sh:14` and `:311`). None in
+  `.githooks/` or `.agents/skills/*/*.sh`.
+- The three `Verifies:` lines are no stop: a break before `Verifies:` keeps each marker whole on
+  its own line, and `scripts/check-traceability.sh` reads a marker anywhere in the file
+  (`scripts/test-build-mapserver.sh:3`, `scripts/test-sensor-diagnostics-untested.sh:3`,
+  `scripts/test-sensor-duplication.sh:3`).
+- No MapServer notice and no here-document line is among the 57.
