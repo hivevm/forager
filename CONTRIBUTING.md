@@ -79,8 +79,9 @@ scripts/lib/          # what the scripts share: bash.sh the bash floor, adr.sh t
                       # verdict, and the fixtures' commit, git.sh git, install.sh the install of a
                       # pinned release binary, notice.sh the notices, package.sh the artefacts,
                       # root.sh the root a script reads, which every scripts/*.sh but the
-                      # self-tests and check-all.sh takes, as check-shell.sh checks, rules.sh the
-                      # rules, selftest.sh the self-tests, ticket.sh the ticket path
+                      # self-tests and check-all.sh takes, as check-shell.sh checks, rows.sh the
+                      # strict reader of a table, rules.sh the rules, selftest.sh the self-tests,
+                      # ticket.sh the ticket path
 scripts/*.sh          # run by hand, steps 7 and 8 of the integration branches:
                       # ready-for-main.sh, drop-merged-branch.sh; and the project's tools:
                       # install-tools.sh, build-web.sh, fuzz.sh, mutants.sh, and the like

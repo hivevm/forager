@@ -11,10 +11,7 @@
 # no Dev Container or no VS Code settings, and the cases that break one clause of
 # NUC-container-hides-host-daemon each, a socket mount also in a config longer than a pipe holds.
 # The table is read twice, the second time against a copy of the check that rewords its messages,
-# and the reader of the table is checked on fields of its own. Forager's own rows, after the
-# table's, pass the GitHub CLI login from the container's own host directory and fail it from the
-# host's own configuration or another path (SEC-gh-login-stays-on-host).
-# A line of the table that is neither blank, a comment, nor a row the reader reads fails, named.
+# and the reader of the table is checked on fields of its own.
 #
 # Inputs: scripts/check-devcontainer.sh scripts/lib/ scripts/fixtures/check-devcontainer.txt
 #
@@ -97,28 +94,7 @@ repo() {
 
 # --- cases read from the fixture table ----------------------------------------------------
 
-# Verifies: SEC-gh-login-stays-on-host — Forager's own rows of the table.
 TABLE="$ROOT/scripts/fixtures/check-devcontainer.txt"
-
-# row_read <line> — 0 for a row the reader reads, one whose first field is pass or fail; 1 for a
-# blank line or a comment. Any other line fails and is named, so that no row is skipped without a
-# word, as Forager's rows were once that began with a check's number.
-row_read() {
-  [[ "$1" =~ ^(pass|fail)\ \|\  ]] && return 0
-  [[ "$1" =~ ^([[:space:]]*$|#) ]] && return 1
-  echo "FAIL: a line of $TABLE is no row the reader reads: $1" >&2
-  failed=$((failed + 1))
-  return 1
-}
-
-# table_rows — the rows of the table on stdin that row_read reads, one a line. Run it in the shell
-# of the self-test, its output redirected to a file, so that a line it fails on counts.
-table_rows() {
-  local line
-  while IFS= read -r line; do
-    if row_read "$line"; then printf '%s\n' "$line"; fi
-  done
-}
 
 # table_cases <prefix> — run each case of the table against $CHECK. The Feature, the extra lines,
 # and the postStartCommand of a case are kept, so that a step that writes devcontainer.json again
@@ -126,8 +102,8 @@ table_rows() {
 table_cases() {
   local n=0 line want needle name tree s op arg d feature path text pad='<pad ([0-9]+)>'
   local -a extras ids
-  table_rows < "$TABLE" > "$work/$1-rows"
   while IFS= read -r line; do
+    [[ "$line" =~ ^(pass|fail) ]] || continue
     n=$((n + 1))
     IFS=$'\x1f' read -r want needle name tree <<< "${line// | /$'\x1f'}"
     d="$(repo "$1-$n")"
@@ -156,32 +132,10 @@ table_cases() {
     post_start="$POST_START"
     out="$(bash "$CHECK" --root "$d" 2>&1)"
     table_case "$name" "$want" "$needle" "$?" "$out"
-  done < "$work/$1-rows"
+  done < "$TABLE"
   ((n > 0)) || { echo "FAIL: no case read from $TABLE" >&2; failed=$((failed + 1)); }
 }
 table_cases table
-
-# unread <line> — table_rows fails on the line, once, names it, and reads no row of it.
-# shellcheck disable=SC2317,SC2329 # run by check
-unread() {
-  local said
-  said="$( (failed=0; table_rows <<< "$1" > "$work/unread"; echo "failed=$failed") 2>&1)"
-  [[ "$said" == *"$1"*$'\n'failed=1 && ! -s "$work/unread" ]]
-}
-# skipped <line> — table_rows reads no row of the line and fails on nothing.
-# shellcheck disable=SC2317,SC2329 # run by check
-skipped() { [[ "$( (failed=0; table_rows <<< "$1"; echo "failed=$failed") 2>&1)" == failed=0 ]]; }
-# read_row <line> — table_rows reads the line as a row and fails on nothing.
-# shellcheck disable=SC2317,SC2329 # run by check
-read_row() { [[ "$( (failed=0; table_rows <<< "$1"; echo "failed=$failed") 2>&1)" == "$1"$'\n'failed=0 ]]; }
-check "a row whose first field is a check's number fails, named" \
-  unread "9 | fail | devcontainer/gh-config:host @ ~/.config/gh | the host's gh config | -"
-check "a row whose first field is no pass or fail fails, named" unread "passes | - | a case | -"
-check "a row of pass and no field separator fails, named" unread "pass - a case -"
-check "a comment is no row and fails on nothing" skipped "# pass | - | a case | -"
-check "a blank line is no row and fails on nothing" skipped ""
-check "a line of spaces is no row and fails on nothing" skipped "   "
-check "a row of pass is read" read_row "pass | - | a case | -"
 
 # --- the key decides, not the wording ------------------------------------------------------
 

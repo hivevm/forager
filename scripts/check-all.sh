@@ -199,6 +199,8 @@ run() {
 
 run "Documentation self-test" scripts/test-check-docs.sh
 run "Documentation consistency" scripts/check-docs.sh
+run "Inactive ADR references self-test" scripts/test-check-inactive-adr-refs.sh
+run "Inactive ADR references" scripts/check-inactive-adr-refs.sh
 run "Normalize map self-test" scripts/test-normalize-remap.sh
 # The readiness script rebases a branch on a human's instruction, as step 7 of
 # Integration branches in CONTRIBUTING.md; its self-test runs here.
@@ -212,6 +214,8 @@ run "Traceability self-test" scripts/test-check-traceability.sh
 run "Traceability" scripts/check-traceability.sh
 run "Dev Container self-test" scripts/test-check-devcontainer.sh
 run "Dev Container" scripts/check-devcontainer.sh
+run "GitHub CLI login self-test" scripts/test-check-gh-login.sh
+run "GitHub CLI login" scripts/check-gh-login.sh
 run "Tests-kept sensor self-test" scripts/test-sensor-tests-kept.sh
 run "Tests-kept sensor" scripts/sensor-tests-kept.sh
 run "Refactor tests sensor self-test" scripts/test-sensor-refactor-tests.sh

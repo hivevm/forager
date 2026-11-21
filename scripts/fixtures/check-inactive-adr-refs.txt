@@ -1,0 +1,48 @@
+# Cases of scripts/check-inactive-adr-refs.sh, read by scripts/test-check-inactive-adr-refs.sh.
+#
+# One case per line, four fields separated by ' | ':
+#
+#   <pass or fail> | <what the output holds, or -> | <name> | <tree>
+#
+# A run exits 0 for pass and 1 for fail. The second field is '<key>', then ' @ <subject>' for each
+# datum the line names, such as a file and line or an identifier. A line of the output ends in
+# '[<key>]', the rule and a reason word, and holds each subject, in that order and with no ASCII
+# letter, digit, hyphen, or underscore beside it; the rest of its wording is free. A field may start
+# with '!': it then holds where no line that ends in '[<key>]' holds the subjects in their order.
+#
+# A line that starts with '#' is a comment, not a case. Any other line that is not blank and not a
+# case fails the self-test, named. An identifier is written with a colon after its category, as
+# 'SEC:decision-1', and read with a hyphen in its place, so that no check reads this table as
+# citing it.
+#
+# The tree is a list of steps separated by '; ', or '-' for none, applied in order to an empty
+# directory, not under git. The steps:
+#
+#   adr <id> <status>      the file docs/adr/<id>.md, exactly '# <id>: decision\n\n- **Status:**
+#                          <line>\n', the line '🟢 accepted' for 'accepted', '🟡 proposed' for
+#                          'proposed', '🔴 rejected' for 'rejected',
+#                          '⚪ superseded by [<new>](<new>.md)' for 'superseded:<new>', and
+#                          '⚪ superseded' for 'superseded'
+#   category <key>         the line '- **<key>** — a category.' appended to docs/adr/README.md,
+#                          which starts with the line '### Categories'
+#   text <file> <text>     the text appended to the file as one more line; the file and its
+#                          directories are made when absent
+#   git                    the directory made a git repository, every file it does not ignore
+#                          staged
+
+pass | docs/inactive-adr-refs:passed | a tree with no ADR passes | text README.md Decided in SEC:decision-1.
+pass | docs/inactive-adr-refs:passed | an accepted ADR cited outside the record passes | adr SEC:decision-1 accepted; text README.md Decided in SEC:decision-1.
+pass | docs/inactive-adr-refs:passed | a proposed ADR cited outside the record passes | adr SEC:decision-1 proposed; text README.md Decided in SEC:decision-1.
+fail | docs/inactive-adr-refs:superseded @ README.md:1 @ SEC:decision-1 @ SEC:decision-2 | a superseded ADR cited in the README | adr SEC:decision-1 superseded:SEC:decision-2; adr SEC:decision-2 accepted; text README.md Decided in SEC:decision-1.
+fail | docs/inactive-adr-refs:superseded @ README.md:2 @ SEC:decision-1 | the line of the citation is named | adr SEC:decision-1 superseded:SEC:decision-2; adr SEC:decision-2 accepted; text README.md # Fixture; text README.md Decided in SEC:decision-1.
+pass | docs/inactive-adr-refs:passed | a superseded ADR cited inside another ADR | adr SEC:decision-1 superseded:SEC:decision-2; adr SEC:decision-2 accepted; text docs/adr/SEC:decision-2.md As SEC:decision-1 decided before.
+pass | docs/inactive-adr-refs:passed | a superseded ADR cited as history beside its successor | adr SEC:decision-1 superseded:SEC:decision-2; adr SEC:decision-2 accepted; text README.md Decided in SEC:decision-2, which superseded SEC:decision-1.
+fail | docs/inactive-adr-refs:superseded @ README.md:1 @ SEC:decision-1 @ SEC:decision-2 | a superseded ADR beside an identifier its successor's is a prefix of | adr SEC:decision-1 superseded:SEC:decision-2; adr SEC:decision-2 accepted; adr SEC:decision-2-b proposed; text README.md Decided in SEC:decision-1, see SEC:decision-2-b.
+fail | docs/inactive-adr-refs:rejected @ scripts/run.sh:1 @ SEC:decision-1 | a rejected ADR cited in a script | adr SEC:decision-1 rejected; text scripts/run.sh # Decided in SEC:decision-1.
+pass | docs/inactive-adr-refs:passed | a rejected ADR cited as rejected | adr SEC:decision-1 rejected; text scripts/run.sh # Not SEC:decision-1, which was rejected.
+fail | docs/inactive-adr-refs:rejected @ README.md:1 @ SEC:decision-1 | a superseded ADR whose status names no successor is held as a rejected one | adr SEC:decision-1 superseded; text README.md Decided in SEC:decision-1.
+fail | docs/inactive-adr-refs:superseded @ README.md:1 @ ARCH:decision-1 | a superseded ADR of a category the index defines | category ARCH; adr ARCH:decision-1 superseded:ARCH:decision-2; adr ARCH:decision-2 accepted; text README.md Decided in ARCH:decision-1.
+pass | docs/inactive-adr-refs:passed | an identifier of a category the index does not define is no citation | adr ARCH:decision-1 superseded:ARCH:decision-2; adr ARCH:decision-2 accepted; text README.md Decided in ARCH:decision-1.
+pass | docs/inactive-adr-refs:passed | an identifier inside a longer word is no citation | adr SEC:decision-1 superseded:SEC:decision-2; adr SEC:decision-2 accepted; text README.md See XSEC:decision-1 and SEC:decision-1-more.
+fail | docs/inactive-adr-refs:superseded @ notes.md:1 @ SEC:decision-1 | a file git tracks is read | adr SEC:decision-1 superseded:SEC:decision-2; adr SEC:decision-2 accepted; text notes.md Decided in SEC:decision-1.; git
+pass | docs/inactive-adr-refs:passed | a file git ignores is not read | adr SEC:decision-1 superseded:SEC:decision-2; adr SEC:decision-2 accepted; text .gitignore notes.md; text notes.md Decided in SEC:decision-1.; git

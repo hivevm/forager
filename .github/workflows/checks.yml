@@ -82,6 +82,12 @@ jobs:
         run: bash scripts/test-check-docs.sh
       - name: Check documentation consistency
         run: bash scripts/check-docs.sh
+      # Forager's own rule beside the template's: no superseded or rejected ADR cited outside
+      # the record.
+      - name: Self-test the check of inactive ADR references
+        run: bash scripts/test-check-inactive-adr-refs.sh
+      - name: Check that no inactive ADR is cited outside the record
+        run: bash scripts/check-inactive-adr-refs.sh
       # The self-test below runs every self-test, the duplication sensor's among them, which runs
       # jscpd at the version scripts/install-jscpd.sh pins (OPS-pinned-stable-rust-toolchain).
       - name: Install jscpd at its pinned version
@@ -120,6 +126,11 @@ jobs:
         run: bash scripts/test-check-devcontainer.sh
       - name: Check that the Dev Container keeps the host engine out of reach
         run: bash scripts/check-devcontainer.sh
+      # Forager's own rule beside the template's: the mount of the GitHub CLI's login.
+      - name: Self-test the GitHub CLI login check
+        run: bash scripts/test-check-gh-login.sh
+      - name: Check that the GitHub CLI login is bound from a host directory of its own
+        run: bash scripts/check-gh-login.sh
 
   sensors:
     runs-on: ubuntu-latest
