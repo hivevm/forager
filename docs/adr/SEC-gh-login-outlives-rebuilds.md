@@ -26,7 +26,12 @@ This ADR restates every clause of SEC-gh-login-stays-on-host in its wording, but
 - the title, which adds the check of Forager's own;
 - the *Applies to*, which names the new check, its self-test, and its table instead of
   `scripts/check-devcontainer.sh`;
-- the *Enforcement*, which names the new check and its job.
+- the *Latitude*, a section the old ADR does not have, which leaves no choice;
+- the *Alternatives considered*, which add keeping the rule in `scripts/check-devcontainer.sh` and
+  sending it to the template, and refer to the old ADR's alternatives for the login itself;
+- the *Sources*, which add the take-up of NUC v0.11.1;
+- the *Consequences*, which add what the check of Forager's own makes easier and what it costs;
+- the *Enforcement*, which names the new check, its job, and its table.
 
 ## Decision
 
@@ -65,10 +70,15 @@ None.
 
 ## Consequences
 
-- Positive: a take-up replaces `scripts/check-devcontainer.sh`, its self-test, and its table with
-  the release's; the rule keeps its own tests whatever the template changes.
-- Negative / trade-offs: one more check and self-test of Forager's own to run; the check reads
-  `devcontainer.json` as the template's does, without a JSON parser.
+- Positive: one `gh` login per host, outliving rebuilds; pushes no longer fail at their end on a
+  token revoked meanwhile; git and `gh` use the same login. A take-up replaces
+  `scripts/check-devcontainer.sh`, its self-test, and its table with the release's; the rule keeps
+  its own tests whatever the template changes.
+- Negative / trade-offs: the OAuth token lies in a file on the host, in a directory the human does
+  not otherwise use, readable by anything that runs as the user there and in the container;
+  logging out (`gh auth logout`) or deleting the directory removes it. The mount is Forager's own,
+  which the template's Dev Container does not carry. One more check and self-test of Forager's own
+  run; the check reads `devcontainer.json` as the template's does, without a JSON parser.
 - Follow-ups: whether the template takes up the login's mount.
 
 ## Enforcement
