@@ -41,8 +41,8 @@ use forager_render::clip::{self, Rect};
 use forager_render::{DrawOp, Point, PremultipliedImage, Tile};
 use forager_style_ir::c::lrint;
 
+use crate::AggRenderer;
 use crate::pixfmt::PixfmtMapserver;
-use crate::{AggRenderer, built_tile};
 
 /// AGG's `line_subpixel_shift` and `line_subpixel_scale`: a line's coordinates are in 1/256
 /// pixel.
@@ -487,7 +487,7 @@ impl AggRenderer {
     /// is not drawn and counts among the refusals of the tile's kind, and a path the clip drops a
     /// segment of counts among the paths refused (ARCH-third-party-failures-guarded).
     pub(crate) fn brushed_line(&mut self, paths: &[Vec<Point>], tile: &Tile, reach: f64) {
-        let image = tile.image(built_tile);
+        let image = self.tile_image(tile);
         let pattern = LineImagePattern::<BilinearRgba8>::with_source(&Source(image));
         let reach = if reach > 0.0 { reach } else { 0.0 };
         let rect = Rect::around_image(self.width, self.height, reach);

@@ -536,9 +536,10 @@ impl AggRenderer {
     /// does: under the even-odd rule without a gamma, through `render_scanlines_aa` over
     /// MapServer's packed scanline, each span's colours those of the tile's pixels at their
     /// positions modulo its size (`image_accessor_wrap` with `wrap_mode_repeat`,
-    /// `span_pattern_rgba` at offset 0, 0). The tile is built here the first time it fills.
+    /// `span_pattern_rgba` at offset 0, 0). The tile is built here the first time it fills (see
+    /// [`AggRenderer::tile_image`]).
     fn tiled_fill(&mut self, rings: &[Vec<Point>], tile: &Tile) {
-        let image = tile.image(built_tile);
+        let image = self.tile_image(tile);
         let mut area = RasterizerScanlineAa::new();
         area.filling_rule(FillingRule::EvenOdd);
         area.add_path(&mut self.area(rings), 0);
@@ -580,11 +581,24 @@ impl AggRenderer {
             }
         });
     }
+
+    /// The image of `tile`, built the first time a renderer draws with it (see [`built_tile`]).
+    /// What the tile's own renderer refused is counted among this one's refusals then, and never
+    /// again, so that the layer that first draws with the tile reports it, once for the tile
+    /// (ARCH-third-party-failures-guarded).
+    pub(crate) fn tile_image<'t>(&mut self, tile: &'t Tile) -> &'t PremultipliedImage {
+        tile.image(|tile| {
+            let (image, refused) = built_tile(tile);
+            self.refused += refused;
+            image
+        })
+    }
 }
 
 /// The image of `tile`, as getTile makes it: its marks drawn in turn in a new transparent image of
-/// the tile's size, as agg2CreateImage clears one, its colours left premultiplied.
-fn built_tile(tile: &Tile) -> PremultipliedImage {
+/// the tile's size, as agg2CreateImage clears one, its colours left premultiplied; and what its
+/// renderer refused to draw of them.
+fn built_tile(tile: &Tile) -> (PremultipliedImage, Refused) {
     let mut renderer = AggRenderer::new();
     renderer.begin(
         tile.width(),
@@ -602,8 +616,10 @@ fn built_tile(tile: &Tile) -> PremultipliedImage {
             feature_id: None,
         });
     }
-    PremultipliedImage::new(tile.width(), tile.height(), renderer.pixels)
-        .expect("a tile is within the sizes an image holds")
+    let refused = renderer.take_refused();
+    let image = PremultipliedImage::new(tile.width(), tile.height(), renderer.pixels)
+        .expect("a tile is within the sizes an image holds");
+    (image, refused)
 }
 
 /// `span_pattern_rgba::generate` over `image_accessor_wrap` with `wrap_mode_repeat`: the colours
@@ -1519,6 +1535,44 @@ mod tests {
                 ..Refused::default()
             };
             assert_eq!(taken, expected, "{item:?}");
+        }
+    }
+
+    #[test]
+    fn what_a_tile_s_renderer_refuses_is_counted_once_by_the_renderer_that_builds_it() {
+        // Verifies: ARCH-third-party-failures-guarded
+        // The tile's mark is a stroke with a point that is no number, a path its renderer's clip
+        // drops a part of. The renderer that first fills or brushes with the tile counts it once,
+        // however often it draws with the tile; a renderer that finds the tile built counts none.
+        let pen = Pen::new(1.0, LineCap::Butt, LineJoin::Miter, InnerJoin::Miter);
+        let mark = DrawOp::Stroke {
+            paths: vec![vec![p(0.0, 1.0), p(f64::NAN, 1.0), p(3.0, 1.0)]],
+            closed: false,
+            color: RED,
+            pen,
+        };
+        let tile = || Rc::new(Tile::new(4, 4, vec![mark.clone()]).unwrap());
+        let fill = |tile: &Rc<Tile>| DrawOp::TiledFill {
+            rings: vec![square(0.0, 64.0)],
+            tile: Rc::clone(tile),
+        };
+        let brush = |tile: &Rc<Tile>| DrawOp::BrushedLine {
+            paths: vec![vec![p(4.0, 32.0), p(60.0, 32.0)]],
+            tile: Rc::clone(tile),
+            reach: 0.0,
+        };
+        let once = Refused {
+            paths: 1,
+            ..Refused::default()
+        };
+        for in_layer in [false, true] {
+            let filled = tile();
+            let items = [fill(&filled), fill(&filled), brush(&filled)];
+            assert_eq!(refused_of(&items, in_layer), (once, Refused::default()));
+            assert_eq!(refused_of(&items, in_layer).0, Refused::default());
+            let brushed = tile();
+            let items = [brush(&brushed), brush(&brushed), fill(&brushed)];
+            assert_eq!(refused_of(&items, in_layer).0, once);
         }
     }
 

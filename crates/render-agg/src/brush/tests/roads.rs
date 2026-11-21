@@ -44,7 +44,7 @@ pub(super) fn tile(width: u32, height: u32) -> Rc<Tile> {
 }
 
 fn pattern(tile: &Tile) -> LineImagePattern<BilinearRgba8> {
-    LineImagePattern::<BilinearRgba8>::with_source(&Source(tile.image(built_tile)))
+    LineImagePattern::<BilinearRgba8>::with_source(&Source(AggRenderer::new().tile_image(tile)))
 }
 
 fn feed(rasterizer: &mut RasterizerOutlineAa, fed: &[(i32, i32)]) {

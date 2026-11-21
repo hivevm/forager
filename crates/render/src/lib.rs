@@ -264,6 +264,15 @@ pub struct Refused {
     pub glyphs: usize,
 }
 
+impl std::ops::AddAssign for Refused {
+    fn add_assign(&mut self, other: Self) {
+        self.pixmaps += other.pixmaps;
+        self.symbols += other.symbols;
+        self.paths += other.paths;
+        self.glyphs += other.glyphs;
+    }
+}
+
 /// Draws display items one by one, onto an image or into a layer of it.
 pub trait Draw {
     fn draw(&mut self, item: &DisplayItem);

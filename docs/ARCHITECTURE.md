@@ -326,7 +326,8 @@ golden path and the test pattern an agent copies from are named here.
   bound, the bytes a brush's copy of it takes, the drawing that makes it, and its image once the
   renderer has built it (`tile.rs`), the renderer trait, whose `take_refused` hands the engine what
   a renderer refused: brushed pieces by the kind of their tile's symbol, the paths the clip cut, and
-  the glyphs past their reach (`Refused`,
+  the glyphs past their reach, those of a tile's own drawing among them, counted by the renderer
+  that builds the tile (`Refused`,
   [ARCH-third-party-failures-guarded](adr/ARCH-third-party-failures-guarded.md)), the RGBA image,
   and the premultiplied image a pixmap is decoded to (`PremultipliedImage`,
   REN-pixmaps-held-once-per-render); the cost model that bounds a hatch before it is cut

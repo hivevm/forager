@@ -129,3 +129,55 @@ fn a_vector_fill_whose_tile_passes_the_bound_warns_and_draws_no_fill() {
     let image = rendered.image.as_ref().unwrap();
     assert!(image.pixels.chunks(4).all(|p| p == [255, 255, 255, 255]));
 }
+
+#[test]
+fn what_the_renderer_refuses_of_a_fill_tile_is_reported_on_the_layer_once_per_tile() {
+    // Verifies: ARCH-third-party-failures-guarded, Q-3
+    // The arrow with a third line out to x = 1.7e308, of which no extent is measured, as a
+    // mapfile's second POINTS block measures the extent anew: the style's scale of 4 takes that
+    // point past every finite number in the tile's pixels, so the tile's renderer drops it from
+    // the line at each of the seamless tile's 9 centres. The layer that first fills with the tile
+    // reports the 9 paths once: for two polygons, as for one, and again in a second render, which
+    // builds its own tile; a second layer that finds the tile held reports nothing of it.
+    let mut map = arrow_map(0.0);
+    map.symbols[0].paths.push(vec![[2.0, 1.0], [1.7e308, 1.0]]);
+    let mut second = map.layers[0].clone();
+    second.name = Some("again".into());
+    second.span = Some(Span::new("m.map", 9, 1));
+    let two = r#"{"type": "MultiPolygon", "coordinates": [
+        [[[10, 10], [40, 10], [40, 40], [10, 40], [10, 10]]],
+        [[[60, 60], [90, 60], [90, 90], [60, 90], [60, 60]]]]}"#;
+    let render = |map: &Map, areas: &str| {
+        let sources = BTreeMap::from([
+            ("areas".to_owned(), GeoJsonSource::parse(areas).unwrap()),
+            ("again".to_owned(), GeoJsonSource::parse(areas).unwrap()),
+        ]);
+        ready(render(map, &sources, AggRenderer::new()))
+    };
+    let warned = |rendered: &Rendered| {
+        let warnings: Vec<_> = rendered
+            .diagnostics
+            .iter()
+            .map(|d| (d.code.as_str(), d.message.as_str(), d.span.clone()))
+            .collect();
+        let message = "layer `areas`: 9 paths are drawn without a point, a segment, or a crossing \
+                       that is no finite number in pixels (Q-3)";
+        let span = Some(Span::new("m.map", 2, 1));
+        assert_eq!(warnings, [("path-not-drawn", message, span)]);
+    };
+    for areas in [AREA, two, AREA] {
+        let rendered = render(&map, areas);
+        warned(&rendered);
+        let drawn = (61..91)
+            .flat_map(|y| (10..40).map(move |x| (x, y)))
+            .filter(|&(x, y)| !white(&rendered, x, y))
+            .count();
+        assert!(
+            drawn > 50,
+            "the rest of the arrow fills: {drawn} pixels drawn"
+        );
+    }
+    let mut both = map.clone();
+    both.layers.push(second);
+    warned(&render(&both, AREA));
+}
