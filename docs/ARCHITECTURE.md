@@ -469,10 +469,10 @@ map it builds and from the display items a recorder in front of agg-rust sees;
 every kind of symbol, and every transform of a class's and a label's style, but those its allow-list
 names with a reason. Beside it, `scripts/check-guards.sh` holds each guard against a third-party
 crate, marked `// Guard: <crate> <version>` in `render`, `render-agg`, and `symbolize`, to a version
-that `Cargo.lock` holds (ARCH-third-party-failures-guarded), `scripts/check-comment-width.sh` holds
-each comment line of a Rust file under `crates/` and `fuzz/`, which rustfmt on the stable toolchain
-does not wrap, and of a script or a workflow to 100 characters, but a script's `# Inputs:` line,
-and `scripts/mutants.sh` runs cargo-mutants every week through
+that `Cargo.lock` holds (ARCH-third-party-failures-guarded), and `scripts/check-comment-width.sh`
+holds each comment line of a Rust file under `crates/` and `fuzz/`, which rustfmt on the stable
+toolchain does not wrap, and of a script or a workflow to 100 characters, but a line that starts
+`# Inputs:`. `scripts/mutants.sh` runs cargo-mutants every week through
 `.github/workflows/mutants.yml` over the Rust code the week changed on main, in 16 shards, and
 reports the edits no test notices. `scripts/package.sh` packs the CLI's archive and the browser
 bindings' package under `target/package/`, each with `THIRD-PARTY-NOTICES.md` and the two licences,

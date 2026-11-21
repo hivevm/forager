@@ -14,8 +14,8 @@
 #     .github/workflows/*.yml;
 #   - the line, its indentation included, is longer than 100 characters.
 #
-# A script's '# Inputs:' line passes at any width: scripts/check-all.sh reads only the first line
-# that starts with it, so its paths cannot be wrapped onto a second line.
+# A line that starts '# Inputs:' passes at any width: scripts/check-all.sh reads only the first
+# line of a self-test that starts with it, so its paths cannot be wrapped onto a second line.
 #
 # Characters are counted, not bytes, as a comment may hold '×' or 'π'. A line that starts with
 # code is not read, so a string literal, a raw string of a fixture, and a comment after code on its
@@ -62,13 +62,13 @@ count=0
 for file in "${files[@]}"; do
   [[ -f "$ROOT/$file" ]] || continue
   count=$((count + 1))
-  comment='^[[:space:]]*#' inputs='^# Inputs:'
-  [[ "$file" == *.rs ]] && comment='^[[:space:]]*//' inputs='^$'
+  comment='^[[:space:]]*#'
+  [[ "$file" == *.rs ]] && comment='^[[:space:]]*//'
   n=0
   while IFS= read -r line || [[ -n "$line" ]]; do
     n=$((n + 1))
     [[ "$line" =~ $comment ]] || continue
-    [[ "$line" =~ $inputs ]] && continue
+    [[ "$line" == '# Inputs:'* ]] && continue
     ((${#line} > WIDTH)) || continue
     echo "ERROR: $file:$n: ${#line} characters — wrap the comment at $WIDTH" >&2
     failures=$((failures + 1))

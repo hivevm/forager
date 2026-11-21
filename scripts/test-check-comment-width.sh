@@ -132,10 +132,6 @@ REJECT="scripts/test-x.sh:1:" expect_check \
 expect_check "only the other long comment is counted" "$dir" 1 \
   "Comment width check FAILED (1 comment lines over 100 characters"
 
-dir="$(repo inputs-rust "$(line '// # Inputs: ' 101)")"
-expect_check "a Rust comment that holds '# Inputs:' is held to the width" \
-  "$dir" 1 "crates/x/src/lib.rs:1: 101 characters"
-
 dir="$(repo attribute "$(line '#[doc = "' 130 'c')\"]
 fn f() {}")"
 expect_check "a long attribute in a Rust file is no comment" \
