@@ -334,9 +334,18 @@ row_read() {
   return 1
 }
 
+# table_rows — the rows of the table on stdin that row_read reads, one a line. Run it in the shell
+# of the self-test, its output redirected to a file, so that a line it fails on counts.
+table_rows() {
+  local line
+  while IFS= read -r line; do
+    if row_read "$line"; then printf '%s\n' "$line"; fi
+  done
+}
+
 n=0
+table_rows < <(cat "$TABLE"; echo "$RECORD_OWN") > "$work/rows"
 while IFS= read -r line; do
-  row_read "$line" || continue
   n=$((n + 1))
   line="$(table_hyphens "$line")"
   IFS=$'\x1f' read -r rule want needle name tree <<< "${line// | /$'\x1f'}"
@@ -353,19 +362,22 @@ while IFS= read -r line; do
   git -C "${d:?}" add -A
   out="$(bash "$CHECK" --root "$d" 2>&1)"
   table_case "$rule: $name" "$want" "$needle" "$?" "$out"
-done < <(cat "$TABLE"; echo "$RECORD_OWN")
+done < "$work/rows"
 ((n > 0)) || { echo "FAIL: no case read from $TABLE" >&2; failed=$((failed + 1)); }
 
-# unread <line> — row_read fails on the line, once, and names it.
+# unread <line> — table_rows fails on the line, once, names it, and reads no row of it.
 # shellcheck disable=SC2317,SC2329 # run by check
 unread() {
   local said
-  said="$( (failed=0; row_read "$1"; echo "failed=$failed") 2>&1)"
-  [[ "$said" == *"$1"*$'\n'failed=1 ]]
+  said="$( (failed=0; table_rows <<< "$1" > "$work/unread"; echo "failed=$failed") 2>&1)"
+  [[ "$said" == *"$1"*$'\n'failed=1 && ! -s "$work/unread" ]]
 }
-# skipped <line> — row_read reads no case in the line and fails on nothing.
+# skipped <line> — table_rows reads no row of the line and fails on nothing.
 # shellcheck disable=SC2317,SC2329 # run by check
-skipped() { [[ "$( (failed=0; row_read "$1"; echo "$?:$failed") 2>&1)" == 1:0 ]]; }
+skipped() { [[ "$( (failed=0; table_rows <<< "$1"; echo "failed=$failed") 2>&1)" == failed=0 ]]; }
+# read_row <line> — table_rows reads the line as a row and fails on nothing.
+# shellcheck disable=SC2317,SC2329 # run by check
+read_row() { [[ "$( (failed=0; table_rows <<< "$1"; echo "failed=$failed") 2>&1)" == "$1"$'\n'failed=0 ]]; }
 check "a row whose first field is a check's number fails, named" \
   unread "17 | pass | - | a superseded ADR cited inside another ADR | adr SEC:decision-1 rejected"
 check "a row whose first field is no rule key fails, named" unread "docs | pass | - | a case | -"
@@ -373,7 +385,7 @@ check "a row of a rule key and no field separator fails, named" unread "docs/lin
 check "a comment is no row and fails on nothing" skipped "# docs/links | pass | - | a case | -"
 check "a blank line is no row and fails on nothing" skipped ""
 check "a line of spaces is no row and fails on nothing" skipped "   "
-check "a row of a rule key is read" row_read "docs/links | pass | - | a case | -"
+check "a row of a rule key is read" read_row "docs/links | pass | - | a case | -"
 
 # A git that cannot read the history, as one before 2.31 rejects --diff-merges, fails the rule
 # docs/adr-identifiers.
