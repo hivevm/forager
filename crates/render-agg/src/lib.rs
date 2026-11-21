@@ -536,8 +536,8 @@ impl AggRenderer {
     /// does: under the even-odd rule without a gamma, through `render_scanlines_aa` over
     /// MapServer's packed scanline, each span's colours those of the tile's pixels at their
     /// positions modulo its size (`image_accessor_wrap` with `wrap_mode_repeat`,
-    /// `span_pattern_rgba` at offset 0, 0). The tile is built here the first time it fills (see
-    /// [`AggRenderer::tile_image`]).
+    /// `span_pattern_rgba` at offset 0, 0). The tile is built the first time a renderer draws
+    /// with it, filled or brushed (see [`AggRenderer::tile_image`]).
     fn tiled_fill(&mut self, rings: &[Vec<Point>], tile: &Tile) {
         let image = self.tile_image(tile);
         let mut area = RasterizerScanlineAa::new();
