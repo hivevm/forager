@@ -340,16 +340,6 @@ while IFS= read -r line; do
 done < "$work/rows"
 ((n > 0)) || { echo "FAIL: no case read from $TABLE" >&2; failed=$((failed + 1)); }
 
-check "a row whose first field is a check's number fails, named" \
-  rows_unread "$ROW_RE" "17 | pass | - | a case | -"
-check "a row whose first field is no rule key fails, named" \
-  rows_unread "$ROW_RE" "docs | pass | - | a case | -"
-check "a row of a rule key and no field separator fails, named" \
-  rows_unread "$ROW_RE" "docs/links pass - a case -"
-check "a comment is no row and fails on nothing" \
-  rows_skipped "$ROW_RE" "# docs/links | pass | - | a case | -"
-check "a row of a rule key is read" rows_read "$ROW_RE" "docs/links | pass | - | a case | -"
-
 # A git that cannot read the history, as one before 2.31 rejects --diff-merges, fails the rule
 # docs/adr-identifiers.
 d="$(repo old-git)"

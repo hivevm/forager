@@ -6,7 +6,7 @@
 # Each case builds a directory of ADRs and text files, runs the check against it, and asserts the
 # exit code and, for a failing case, the key and the data of the violation. The cases stand in
 # scripts/fixtures/check-inactive-adr-refs.txt, which says its format. A line of the table that is
-# neither blank, a comment, nor a row the reader reads fails, named.
+# neither blank, a comment, nor a row the reader reads fails, named (lib/rows.sh).
 #
 # Inputs: scripts/check-inactive-adr-refs.sh scripts/lib/ scripts/fixtures/
 #
@@ -71,13 +71,6 @@ while IFS= read -r line; do
   table_case "$name" "$want" "$needle" "$?" "$out"
 done < "$work/rows"
 ((n > 0)) || { echo "FAIL: no case read from $TABLE" >&2; failed=$((failed + 1)); }
-
-check "a row whose first field is a rule key fails, named" \
-  rows_unread "$ROW_RE" "docs/inactive-adr-refs | pass | - | a case | -"
-check "a row of pass and no field separator fails, named" rows_unread "$ROW_RE" "pass - a case -"
-check "a comment is no row and fails on nothing" rows_skipped "$ROW_RE" "# pass | - | a case | -"
-check "a blank line is no row and fails on nothing" rows_skipped "$ROW_RE" ""
-check "a row of pass is read" rows_read "$ROW_RE" "pass | - | a case | -"
 
 out="$(bash "$CHECK" --root "$work/absent" 2>&1)"
 check "a root that is no directory is refused" test "$?" -eq 2

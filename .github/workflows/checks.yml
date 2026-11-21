@@ -82,8 +82,10 @@ jobs:
         run: bash scripts/test-check-docs.sh
       - name: Check documentation consistency
         run: bash scripts/check-docs.sh
-      # Forager's own rule beside the template's: no superseded or rejected ADR cited outside
-      # the record.
+      # Forager's own: the strict reader of its fixture tables, and its rule beside the
+      # template's that no superseded or rejected ADR is cited outside the record.
+      - name: Self-test the strict reader of the fixture tables
+        run: bash scripts/test-rows.sh
       - name: Self-test the check of inactive ADR references
         run: bash scripts/test-check-inactive-adr-refs.sh
       - name: Check that no inactive ADR is cited outside the record

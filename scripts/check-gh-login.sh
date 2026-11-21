@@ -14,9 +14,9 @@
 #      in '.config/gh-devcontainer', the directory of the container's login.
 #
 # A tree without .devcontainer/devcontainer.json has no Dev Container, and nothing binds: the check
-# passes and says so. Full-line '//' comments are dropped before reading. A mount is a string
-# '"source=…,target=…"' on one line, as the Dev Container writes its mounts; a mount written as an
-# object is not read. The file is small and hand-written, and no JSON parser is guaranteed on
+# passes and says so. Full-line '//' comments are dropped before reading. A mount is a string on
+# one line that holds a 'source=' and a 'target=' option, in any order, as the Dev Container writes
+# its mounts; a mount written as an object is not read. The file is small and hand-written, and no JSON parser is guaranteed on
 # PATH.
 #
 # Pure bash + grep. Usage:
@@ -48,15 +48,16 @@ fi
 count=0
 while IFS= read -r mount; do
   count=$((count + 1))
-  source="$(grep -oE 'source=[^,"]*' <<< "$mount")"
-  target="$(grep -oE 'target=[^,"]*' <<< "$mount")"
+  source="$(grep -oE '(^"|,)[[:space:]]*source=[^,"]*' <<< "$mount" | grep -oE 'source=.*')"
+  target="$(grep -oE '(^"|,)[[:space:]]*target=[^,"]*' <<< "$mount" | grep -oE 'target=.*')"
   if [[ "$source" =~ \.config/gh/?$ ]]; then
     add_error "$CONFIG: binds the host's own '.config/gh' — the container keeps its login in '~/.config/gh-devcontainer' on the host (SEC-gh-login-outlives-rebuilds) [devcontainer/gh-login:host]"
   elif [[ "$target" =~ ^target=/home/vscode/\.config/gh/?$ \
     && ! "$source" =~ \.config/gh-devcontainer/?$ ]]; then
     add_error "$CONFIG: binds /home/vscode/.config/gh from '${source#source=}' — it comes from '~/.config/gh-devcontainer' on the host (SEC-gh-login-outlives-rebuilds) [devcontainer/gh-login:source]"
   fi
-done < <(grep -vE '^[[:space:]]*//' "$ROOT/$CONFIG" | grep -oE '"source=[^"]*,[[:space:]]*target=[^"]*"')
+done < <(grep -vE '^[[:space:]]*//' "$ROOT/$CONFIG" | grep -oE '"[^"]*"' \
+  | grep -E '(^"|,)[[:space:]]*source=' | grep -E '(^"|,)[[:space:]]*target=')
 
 if ((${#errors[@]})); then
   echo "GitHub CLI login check FAILED:" >&2

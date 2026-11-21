@@ -199,6 +199,7 @@ run() {
 
 run "Documentation self-test" scripts/test-check-docs.sh
 run "Documentation consistency" scripts/check-docs.sh
+run "Table reader self-test" scripts/test-rows.sh
 run "Inactive ADR references self-test" scripts/test-check-inactive-adr-refs.sh
 run "Inactive ADR references" scripts/check-inactive-adr-refs.sh
 run "Normalize map self-test" scripts/test-normalize-remap.sh
