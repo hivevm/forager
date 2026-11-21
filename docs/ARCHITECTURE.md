@@ -216,7 +216,8 @@ golden path and the test pattern an agent copies from are named here.
   of its class styles passed, are one value, `Refusals`, which a canvas yields in one call, the
   labels keep per layer and merge, and the layer's reports turn into its diagnostics, the labels'
   refusals among them, in one module, `layer_reports.rs`, which writes the reports of a layer's
-  styles and transform trees too. It loads the images of a layer's pixmap marks and fills, and of
+  styles and transform trees too, and of what the renderer refused, of a label of the cache on
+  the label's layer. It loads the images of a layer's pixmap marks and fills, and of
   its labels' `labelpoint` and `labelcenter` pixmaps, into the render's store before it draws the
   layer, since `symbolize` does no I/O, and hands them to it on the canvas, and to the labels, which
   size the marker a class's first style holds beneath each label, and a `labelpoint` style's marker,

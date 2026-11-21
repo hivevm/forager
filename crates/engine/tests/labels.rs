@@ -2536,6 +2536,56 @@ fn a_labelpoint_marker_of_a_bound_size_takes_each_features_size_in_the_cache() {
 }
 
 #[test]
+fn what_the_renderer_refuses_of_a_cached_label_is_reported_on_the_label_s_layer() {
+    // Verifies: ARCH-third-party-failures-guarded, Q-3
+    // The labelpoint marker's square with a second ring out to x = 1.7e308, of which no extent is
+    // measured, as a mapfile's second POINTS block measures the extent anew: the marker's scale
+    // of 8 takes that point past every finite number, so the renderer's clip drops it from the
+    // ring as the label cache draws the label. The label's layer reports the path; the layer of
+    // POSTLABELCACHE TRUE drawn after the cache, with nothing of its own to refuse, does not.
+    let mut map = map_with_square(fen_at_lr_with_marker());
+    map.symbols[0]
+        .paths
+        .push(vec![[1.0, 0.5], [1.7e308, 0.5], [1.0, 0.6]]);
+    map.layers[0].span = Some(Span::new("m.map", 2, 1));
+    let post = Layer {
+        name: Some("after".into()),
+        post_label_cache: true,
+        classes: vec![Class {
+            styles: vec![Style {
+                color: Some(Bound::Value(BLUE)),
+                size: Some(Bound::Value(3.0)),
+                ..Style::default()
+            }],
+            ..Class::default()
+        }],
+        span: Some(Span::new("m.map", 9, 1)),
+        ..map.layers[0].clone()
+    };
+    map.layers.push(post);
+    let sources: BTreeMap<String, GeoJsonSource> = ["places", "after"]
+        .into_iter()
+        .map(|name| (name.to_owned(), GeoJsonSource::parse(FEN).unwrap()))
+        .collect();
+    let rendered = ready(render_with_files(
+        &map,
+        &sources,
+        &Files,
+        AggRenderer::new(),
+    ));
+    let warnings: Vec<_> = rendered
+        .diagnostics
+        .iter()
+        .map(|d| (d.code.as_str(), d.message.as_str(), d.span.clone()))
+        .collect();
+    let message = "layer `places`: 1 path is drawn without a point, a segment, or a crossing that \
+                   is no finite number in pixels (Q-3)";
+    let span = Some(Span::new("m.map", 2, 1));
+    assert_eq!(warnings, [("path-not-drawn", message, span)]);
+    assert!(rendered.labels[0].drawn.is_some(), "the label is drawn");
+}
+
+#[test]
 fn a_labelpoint_marker_takes_room_from_the_labels_after_it() {
     // msTestLabelCacheCollisions tests a label's text against the text and the labelpoint
     // markers of the labels drawn (maplabel.c:781-868). "b", added last, is drawn first: its

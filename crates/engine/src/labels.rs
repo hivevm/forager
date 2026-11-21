@@ -28,7 +28,7 @@ use forager_label::{
     pixel_size, placed_at, walk_label_cache,
 };
 use forager_ports::{Feature, ResourceLoader};
-use forager_render::{Draw, DrawOp, GlyphOutline, Point, Renderer};
+use forager_render::{Draw, DrawOp, GlyphOutline, Point, Refused, Renderer};
 use forager_style_ir::c::{DEG_TO_RAD, c_str, int_cast, ms_nint};
 use forager_style_ir::{Diagnostic, Expr, LabelMarker, LabelTransform, Map, Op, Rgba, Span, Style};
 use forager_symbolize::{Factors, Pixmaps, Refusals, SymbolResources, marker_size_of};
@@ -40,7 +40,7 @@ use crate::label_binding::{BoundLabel, Fixed, bind, fixed};
 use crate::label_cache::{self, LabelAt, index, push};
 use crate::label_styles::{self, LabelStyles, Placed, Styled, StylesOf};
 use crate::layer::{Rotation, draw_items, layer_opacity, points_in_view, quoted};
-use crate::layer_reports::{refusal_reports, refused_hatches};
+use crate::layer_reports::{refusal_reports, refused_hatches, renderer_refusals};
 use crate::render_resources::Shared;
 
 /// A label of a render's label cache.
@@ -989,9 +989,9 @@ impl<'r> Labels<'r> {
     /// built just before it is drawn. A glyph left out for reaching too far from the image is
     /// reported once for its label, and the labels left out past [`MAX_LABELS`] once. The cache is
     /// emptied; the fonts and glyphs stay for the labels of the layers of `POSTLABELCACHE TRUE`,
-    /// drawn at once after it. What the renderer refused while drawing the cache belongs to no
-    /// layer: it is taken and dropped, so that no layer drawn after the cache is blamed for it,
-    /// and it is not reported (`docs/backlog/refusals-of-no-layer.md`).
+    /// drawn at once after it. What the renderer refused while drawing a label is taken after the
+    /// label and reported on the label's layer, so that no layer drawn after the cache is blamed
+    /// for it.
     pub(crate) fn finish<R: Renderer>(
         &mut self,
         renderer: &mut R,
@@ -1033,6 +1033,9 @@ impl<'r> Labels<'r> {
             width,
             height,
         );
+        // What the renderer refused as it drew each label, by the index of the label's layer, so
+        // that no layer drawn after the cache is blamed for it (ARCH-third-party-failures-guarded).
+        let mut refused: BTreeMap<usize, Refused> = BTreeMap::new();
         // The report follows the cache's walk, every member it visits with whether it was drawn.
         let mut walked: Vec<(u32, Option<[f64; 4]>)> = Vec::with_capacity(cached.len());
         let gutter = self.map.label_cache_edge_buffer.unwrap_or(0);
@@ -1067,12 +1070,15 @@ impl<'r> Labels<'r> {
             );
             self.out_of_reach(diagnostics, at, out_of_reach);
             self.refused(at, styled.take_refusals());
+            *refused.entry(at.0).or_default() += renderer.take_refused();
         });
         // The engine holds no more than MAX_LABELS while it caches, which bounds its memory (Q-9),
         // so the cache leaves none out of what it is handed.
         debug_assert_eq!(left_out, 0, "the engine holds at most MAX_LABELS labels");
         self.report_refusals(diagnostics);
-        renderer.take_refused();
+        for (layer, refused) in refused {
+            diagnostics.extend(renderer_refusals(&self.map.layers[layer], refused));
+        }
         // The labels of the report share their feature's text.
         let texts: Vec<Arc<str>> = texts.into_iter().map(Arc::from).collect();
         let report = walked
