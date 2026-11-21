@@ -270,8 +270,9 @@ impl Layout {
         // overflows, which C leaves undefined, the pen holds the product's exact value: such a
         // line stands past any image, and its glyphs are left out as they are drawn. The product
         // stays in an i64: the line height is an int, at most 2^31 either way, and each line
-        // takes a character of the label's text, which Q-9's bounds on a data file and on a
-        // text keep within 256 MiB, so the rows stay under 2^28 and the product under 2^59.
+        // takes a character of the label's text. Q-9 bounds a text an expression reads or
+        // computes at 16 MiB, and a mapfile's text at 16 MiB with 16 MiB more of its VALIDATION
+        // defaults, so the rows stay under 2^25 and the product under 2^56.
         let rows = 1 - self.num_lines as i64 + number as i64;
         let pen_y = (rows * self.line_height) as f64;
         let mut pen_x = 0.0;
