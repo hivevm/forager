@@ -12,6 +12,7 @@
 # held to them. Those of the rule docs/inactive-adr-refs (no inactive ADR cited outside the record)
 # and the exemption of docs/check-lists for a script only a workflow that is no gate runs, this
 # project's own, stand in the same format in RECORD_OWN below, read through the same reader. Every fixture has its setup done.
+# A line of either that is neither blank, a comment, nor a row the reader reads fails, named.
 #
 # Four cases stay here, since no row of the table can hold them: a reference in words to a
 # section AGENTS.md lacks, twice, which the rule docs/section-refs would read in the table itself,
@@ -322,9 +323,20 @@ docs/check-lists | fail | docs/check-lists:unrun @ scripts/check-all.sh @ script
 EOF
 )"
 
+# row_read <line> — 0 for a row the reader reads, one whose first field is a rule key or 'all'; 1
+# for a blank line or a comment. Any other line fails and is named, so that no row is skipped
+# without a word, as Forager's rows were once that began with a check's number.
+row_read() {
+  [[ "$1" =~ ^(docs/[a-z0-9-]+|all)\ \| ]] && return 0
+  [[ "$1" =~ ^([[:space:]]*$|#) ]] && return 1
+  echo "FAIL: a line of the table is no row the reader reads: $1" >&2
+  failed=$((failed + 1))
+  return 1
+}
+
 n=0
 while IFS= read -r line; do
-  [[ "$line" =~ ^(docs/[a-z0-9-]+|all)\ \| ]] || continue
+  row_read "$line" || continue
   n=$((n + 1))
   line="$(table_hyphens "$line")"
   IFS=$'\x1f' read -r rule want needle name tree <<< "${line// | /$'\x1f'}"
@@ -343,6 +355,25 @@ while IFS= read -r line; do
   table_case "$rule: $name" "$want" "$needle" "$?" "$out"
 done < <(cat "$TABLE"; echo "$RECORD_OWN")
 ((n > 0)) || { echo "FAIL: no case read from $TABLE" >&2; failed=$((failed + 1)); }
+
+# unread <line> — row_read fails on the line, once, and names it.
+# shellcheck disable=SC2317,SC2329 # run by check
+unread() {
+  local said
+  said="$( (failed=0; row_read "$1"; echo "failed=$failed") 2>&1)"
+  [[ "$said" == *"$1"*$'\n'failed=1 ]]
+}
+# skipped <line> — row_read reads no case in the line and fails on nothing.
+# shellcheck disable=SC2317,SC2329 # run by check
+skipped() { [[ "$( (failed=0; row_read "$1"; echo "$?:$failed") 2>&1)" == 1:0 ]]; }
+check "a row whose first field is a check's number fails, named" \
+  unread "17 | pass | - | a superseded ADR cited inside another ADR | adr SEC:decision-1 rejected"
+check "a row whose first field is no rule key fails, named" unread "docs | pass | - | a case | -"
+check "a row of a rule key and no field separator fails, named" unread "docs/links pass - a case -"
+check "a comment is no row and fails on nothing" skipped "# docs/links | pass | - | a case | -"
+check "a blank line is no row and fails on nothing" skipped ""
+check "a line of spaces is no row and fails on nothing" skipped "   "
+check "a row of a rule key is read" row_read "docs/links | pass | - | a case | -"
 
 # A git that cannot read the history, as one before 2.31 rejects --diff-merges, fails the rule
 # docs/adr-identifiers.
